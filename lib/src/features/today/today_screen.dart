@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../app/palette.dart';
-import '../../core/clock.dart';
 import '../../core/formatters.dart';
-import '../../data/repositories/settings_repository.dart';
 import '../../domain/models/activity.dart';
-import '../../domain/models/app_settings.dart';
 import '../../domain/models/time_entry.dart';
-import '../../domain/timeline/continue_rule.dart';
 import '../../domain/timeline_writer.dart';
+import '../calendar/calendar_providers.dart';
+import '../calendar/day_calendar.dart';
+import '../calendar/day_navigation_bar.dart';
+import '../entry/entry_sheet.dart';
+import 'resume_action.dart';
 import 'action_feedback.dart';
 import 'running_card.dart';
 import 'start_sheet.dart';
@@ -27,35 +28,70 @@ class TodayScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final entriesAsync = ref.watch(dayEntriesProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Today'),
-        actions: <Widget>[
-          IconButton(
-            onPressed: () => _openSettings(context),
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
+    return CallbackShortcuts(
+      // SPEC §10.5. The block-focused shortcuts live on the blocks themselves.
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+            ref.read(selectedDayProvider.notifier).previousDay(),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+            ref.read(selectedDayProvider.notifier).nextDay(),
+        const SingleActivator(LogicalKeyboardKey.keyT): () =>
+            ref.read(selectedDayProvider.notifier).today(),
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+            _start(context, ref),
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
+            _start(context, ref),
+        const SingleActivator(LogicalKeyboardKey.period, control: true): () =>
+            _stop(context, ref),
+        const SingleActivator(LogicalKeyboardKey.period, meta: true): () =>
+            _stop(context, ref),
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () =>
+            _resumeLast(context, ref),
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () =>
+            _resumeLast(context, ref),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('time-log'),
+            actions: <Widget>[
+              IconButton(
+                onPressed: () => _openSettings(context),
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+              ),
+            ],
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _start(context, ref),
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Start'),
-      ),
-      body: entriesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _DatabaseError(error: error),
-        data: (entries) => Column(
-          children: <Widget>[
-            RunningCard(
-              onStop: () => _stop(context, ref),
-              onResumeLast: () => _resumeLast(context, ref),
-              onFixStart: () => _openSettings(context),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => _start(context, ref),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Start'),
+          ),
+          body: entriesAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => _DatabaseError(error: error),
+            data: (_) => Column(
+              children: <Widget>[
+                RunningCard(
+                  onStop: () => _stop(context, ref),
+                  onResumeLast: () => _resumeLast(context, ref),
+                  onFixStart: () => _openSettings(context),
+                ),
+                const DayNavigationBar(),
+                Expanded(
+                  child: _DayBody(
+                    onEntryTap: (entry) => showEntrySheet(context, entry),
+                    onPreviousDay: () =>
+                        ref.read(selectedDayProvider.notifier).previousDay(),
+                    onNextDay: () =>
+                        ref.read(selectedDayProvider.notifier).nextDay(),
+                  ),
+                ),
+                const _DayTotalsFooter(),
+              ],
             ),
-            Expanded(child: _DayEntryList(entries: entries)),
-            const _DayTotalsFooter(),
-          ],
+          ),
         ),
       ),
     );
@@ -101,120 +137,61 @@ class TodayScreen extends ConsumerWidget {
   }
 }
 
-/// Resume creates a new entry; Continue reopens the most recent one when it
-/// ended moments ago (SPEC §6.3, §6.4).
-Future<void> resumeOrContinue(
-  BuildContext context,
-  WidgetRef ref,
-  TimeEntry entry,
-) async {
-  final writer = ref.read(timelineWriterProvider);
-  final settings = ref.read(appSettingsProvider).value ?? const AppSettings();
-  final now = ref.read(appClockProvider).nowUtc();
-  final lastFinished = await ref.read(lastFinishedEntryProvider.future);
-  final running = ref.read(runningEntryProvider).value;
+/// The day itself. Horizontal swipe changes day; the arrows and date picker in
+/// [DayNavigationBar] do the same without a gesture (SPEC §10.1).
+class _DayBody extends ConsumerWidget {
+  const _DayBody({
+    required this.onEntryTap,
+    required this.onPreviousDay,
+    required this.onNextDay,
+  });
 
-  final canContinue = canContinueEntry(
-    entry: entry,
-    lastFinished: lastFinished,
-    running: running,
-    now: now,
-    window: settings.continueWindow,
-  );
-
-  if (canContinue && context.mounted) {
-    final choice = await _askContinueOrNew(context);
-    if (choice == null || !context.mounted) return;
-    if (choice == _ResumeChoice.continueEntry) {
-      final undo = await writer.continueEntry(
-        entry.id,
-        window: settings.continueWindow,
-      );
-      if (!context.mounted) return;
-      showUndoableFeedback(context, message: 'Continued', undo: undo);
-      return;
-    }
-  }
-
-  final outcome = await writer.resume(entry.id);
-  if (!context.mounted) return;
-  showStartFeedback(context, outcome);
-}
-
-enum _ResumeChoice { continueEntry, startNew }
-
-Future<_ResumeChoice?> _askContinueOrNew(BuildContext context) =>
-    showDialog<_ResumeChoice>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Continue or start new?'),
-        content: const Text(
-          'This entry ended moments ago. Continuing extends it instead of '
-          'creating a second entry next to it.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(_ResumeChoice.startNew),
-            child: const Text('Start new'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(_ResumeChoice.continueEntry),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-
-/// A plain chronological list of the day. P2 replaces this with the calendar.
-class _DayEntryList extends ConsumerWidget {
-  const _DayEntryList({required this.entries});
-
-  final List<TimeEntry> entries;
+  final void Function(TimeEntry entry) onEntryTap;
+  final VoidCallback onPreviousDay;
+  final VoidCallback onNextDay;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (entries.isEmpty) {
-      return const Center(child: Text('No entries for this day'));
-    }
-    final activities =
-        ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{};
-    final settings =
-        ref.watch(appSettingsProvider).value ?? const AppSettings();
+    final timeline = ref.watch(dayTimelineProvider);
 
-    return ListView.builder(
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        final activity = activities[entry.activityId];
-        final colors = ActivityPalette.forSeed(
-          activity?.colorSeed ?? 0,
-          Theme.of(context).brightness,
-        );
-        return ListTile(
-          leading: Container(
-            width: 16,
-            height: 40,
-            decoration: BoxDecoration(
-              color: colors.fill,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          title: Text(activity?.name ?? 'Activity'),
-          subtitle: Text(
-            '${formatTimeOfDay(entry.startUtc.toLocal(), use24h: settings.use24HourClock)}'
-            ' - '
-            '${entry.endUtc == null ? 'now' : formatTimeOfDay(entry.endUtc!.toLocal(), use24h: settings.use24HourClock)}',
-          ),
-          trailing: IconButton(
-            tooltip: 'Resume ${activity?.name ?? 'activity'}',
-            icon: const Icon(Icons.play_arrow),
-            onPressed: () => resumeOrContinue(context, ref, entry),
-          ),
-        );
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity > 200) {
+          onPreviousDay();
+        } else if (velocity < -200) {
+          onNextDay();
+        }
       },
+      // A day with no entries is one big hatched gap, which tells the user
+      // nothing. Say so in words instead.
+      child: timeline.isEmpty
+          ? const _EmptyDay()
+          : DayCalendar(onEntryTap: onEntryTap),
     );
   }
+}
+
+class _EmptyDay extends StatelessWidget {
+  const _EmptyDay();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Text('No entries for this day'),
+          const SizedBox(height: 8),
+          Text(
+            'Tap Start to track something.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _DayTotalsFooter extends ConsumerWidget {

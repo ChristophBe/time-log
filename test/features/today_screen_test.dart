@@ -301,7 +301,7 @@ void main() {
     expect(find.textContaining('Writing specs 2:00'), findsOneWidget);
   });
 
-  testWidgets('resuming from a day row goes through the writer', (
+  testWidgets('resuming from a calendar block goes through the writer', (
     tester,
   ) async {
     final entry = entryFor(
@@ -319,7 +319,14 @@ void main() {
     when(() => h.writer.resume(any())).thenAnswer((_) async => startOutcome());
     await h.pump(tester, const TodayScreen());
 
-    await tester.tap(find.byTooltip('Resume Writing specs'));
+    // The calendar opens scrolled to the now-line, so this block sits above the
+    // viewport until we scroll to it.
+    final block = find.byKey(const ValueKey<String>('block-e1'));
+    await tester.ensureVisible(block);
+    await tester.pumpAndSettle();
+    await tester.tap(block);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Resume'));
     await tester.pumpAndSettle();
 
     verify(() => h.writer.resume('e1')).called(1);

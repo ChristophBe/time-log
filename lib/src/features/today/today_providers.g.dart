@@ -287,7 +287,7 @@ final class DayTotalsProvider
   }
 }
 
-String _$dayTotalsHash() => r'fe9ab41a2be309e91aed44da9836444f22442af8';
+String _$dayTotalsHash() => r'3da3191ae1882d3ce6994e07d8c6175e9c647473';
 
 @ProviderFor(activitySuggestions)
 final activitySuggestionsProvider = ActivitySuggestionsFamily._();
@@ -347,7 +347,7 @@ final class ActivitySuggestionsProvider
 }
 
 String _$activitySuggestionsHash() =>
-    r'18716d05784c5e199ee158d74564d39e2c7d2658';
+    r'fd64e645c162178ac511f09c81077ac7a2b1ea35';
 
 final class ActivitySuggestionsFamily extends $Family
     with $FunctionalFamilyOverride<Stream<List<ActivitySuggestion>>, String> {

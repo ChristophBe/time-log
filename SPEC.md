@@ -642,7 +642,7 @@ integration suite on one mobile and one desktop target.
 | **P1 Core tracking** | `TimelineWriter` start/stop/resume/continue, running card, Start sheet with suggestions, persistence across relaunch. | Start → switch → resume works end-to-end; §4 and §6 tests green; running entry survives app kill. |
 | **P2 Day calendar** | Day view, axis, zoom, now-line, blocks, gaps, midnight splitting, day navigation, day totals. | Calendar geometry and day/zone tests green; a day of real use reads correctly, including across a DST change. |
 | **P3 Editing** | Drag handles, the §7 rules, entry sheet with typed fields and steppers, split, delete, undo — each landing with its keyboard and screen-reader equivalent. | §7 tests green; a boundary can be corrected by drag, by typing, and by keyboard alone with identical results. |
-| **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, empty/error states. | Export → wipe → import round-trips; §10.6 manual passes done. |
+| **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | Export → wipe → import round-trips; §10.6 manual passes done. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, projects/tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 

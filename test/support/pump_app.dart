@@ -9,6 +9,7 @@ import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
+import 'package:time_log/src/domain/timeline/day_window.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
 import 'package:time_log/src/features/today/today_providers.dart';
 
@@ -30,6 +31,7 @@ class WidgetHarness {
     this.activities = const <String, Activity>{},
     this.suggestions = const <ActivitySuggestion>[],
     this.lastFinished,
+    this.dayWindows,
   }) : clock = FakeClock(now ?? DateTime.utc(2026, 3, 10, 14, 32));
 
   final FakeClock clock;
@@ -39,6 +41,10 @@ class WidgetHarness {
   final Map<String, Activity> activities;
   final List<ActivitySuggestion> suggestions;
   final TimeEntry? lastFinished;
+
+  /// Lets a test hand the calendar a 23- or 25-hour day without depending on the
+  /// time zone of the machine running the tests.
+  final DayWindowCalculator? dayWindows;
 
   final MockTimelineWriter writer = MockTimelineWriter();
 
@@ -55,6 +61,8 @@ class WidgetHarness {
       ProviderScope(
         overrides: [
           appClockProvider.overrideWithValue(clock),
+          if (dayWindows != null)
+            dayWindowsProvider.overrideWithValue(dayWindows!),
           timelineWriterProvider.overrideWithValue(writer),
           appSettingsProvider.overrideWith(
             (ref) => Stream<AppSettings>.value(settings),
