@@ -59,6 +59,24 @@ class TimeEntryRepository {
     return row?.toDomain();
   }
 
+  /// The entries immediately before and after [entryId] on the timeline.
+  ///
+  /// Looked up from the database rather than from the visible day, so a
+  /// neighbour on the other side of midnight is still found.
+  Future<({TimeEntry? previous, TimeEntry? next})> neighboursOf(
+    String entryId,
+    DateTime startUtc,
+  ) async {
+    final instant = toMillis(startUtc);
+    final previous = await _db
+        .entryEndingAtOrBefore(entryId, instant)
+        .getSingleOrNull();
+    final next = await _db
+        .entryStartingAfter(entryId, instant)
+        .getSingleOrNull();
+    return (previous: previous?.toDomain(), next: next?.toDomain());
+  }
+
   Future<TimeEntry?> lastFinishedEntry() async {
     final row = await _db.lastFinishedEntry().getSingleOrNull();
     return row?.toDomain();

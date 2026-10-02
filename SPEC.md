@@ -286,6 +286,10 @@ identically to drag, typed fields and steppers.
   switched at 14:30, not 14:15" means.
 - **Free boundary** (a gap, or nothing, on the other side): moving it moves **that edge only**,
   growing into or shrinking away from the gap.
+- This distinction belongs to the **boundary, not to the gesture**. A typed time and a stepper nudge
+  carry the neighbour exactly as a drag does. Without that, typing could never move a shared
+  boundary at all — every value would be reported as overlapping the neighbour — and the three
+  editing paths of §14.5 would disagree.
 
 ### 7.2 Clamping
 
@@ -296,7 +300,11 @@ A boundary can never cross:
 
 Clamping is silent: the block simply stops following the finger, with a short haptic at the limit.
 The app does not throw an error for a gesture that was merely over-eager. **Typed** input that
-violates a clamp *is* reported, inline, naming the conflict ("overlaps *Email* until 15:05").
+violates a clamp *is* reported, inline, naming the conflict ("overlaps *Email* until 15:05", or for a
+shared boundary, "that would leave *Email* under 1 minute").
+
+A drag keeps the **grab offset**: the boundary moves by as much as the finger moves, rather than
+jumping to wherever the finger first landed. Grabbing an edge should not itself change anything.
 
 ### 7.3 Snapping
 
@@ -468,7 +476,7 @@ feature that fails them is not done.
 
 | Gesture | Equivalent |
 | --- | --- |
-| Drag block edge to resize | Entry sheet Start/End/Duration fields + `−`/`+` steppers; `onIncrease`/`onDecrease` semantics actions on the block; keyboard shortcuts (§10.5) |
+| Long-press an edge, then drag, to resize (a plain vertical drag belongs to the scroll view) | Entry sheet Start/End/Duration fields + `−`/`+` steppers; `onIncrease`/`onDecrease` semantics actions on the block, whose `value` is the entry's duration; keyboard shortcuts (§10.5) |
 | Pinch to zoom | Zoom buttons; `Ctrl`/`Cmd`+scroll; a zoom setting |
 | Swipe between days | `←`/`→`, date header picker, Today action |
 | Swipe row to delete | Long-press context menu; sheet action |

@@ -326,7 +326,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(block);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Resume'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Resume'));
     await tester.pumpAndSettle();
 
     verify(() => h.writer.resume('e1')).called(1);

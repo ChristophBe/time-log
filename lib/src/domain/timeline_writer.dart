@@ -363,7 +363,10 @@ class TimelineWriter {
   /// Sets both edges at once, for typed input in the entry sheet (SPEC §8.4).
   ///
   /// Typed values are not snapped (SPEC §7.3) and a conflict is reported rather
-  /// than silently clamped (SPEC §7.2).
+  /// than silently clamped (SPEC §7.2). A boundary that was *shared* with a
+  /// neighbour still moves both edges, exactly as dragging it does (SPEC §7.1) --
+  /// otherwise typing could never move a shared boundary at all, since any value
+  /// would overlap the neighbour.
   Future<UndoToken> setEntryTimes({
     required String entryId,
     required DateTime startUtc,
@@ -371,14 +374,50 @@ class TimelineWriter {
   }) async => _db.transaction(() async {
     final now = _clock.nowUtc();
     final row = await _requireRow(entryId);
-    final updated = row.toDomain().copyWith(
-      startUtc: startUtc,
-      endUtc: endUtc,
-      clearEnd: endUtc == null,
+    final entry = row.toDomain();
+
+    final prevRow = await _db
+        .entryEndingAtOrBefore(entryId, toMillis(entry.startUtc))
+        .getSingleOrNull();
+    final nextRow = await _db
+        .entryStartingAfter(entryId, toMillis(entry.startUtc))
+        .getSingleOrNull();
+    final prev = prevRow?.toDomain();
+    final next = nextRow?.toDomain();
+
+    final movesStart = startUtc != entry.startUtc;
+    final movesEnd = endUtc != entry.endUtc;
+    final sharedPrev =
+        movesStart && prev != null && prev.endUtc == entry.startUtc;
+    final sharedNext =
+        movesEnd && next != null && next.startUtc == entry.endUtc;
+
+    final snapshots = <TimeEntryRow>[
+      row,
+      if (sharedPrev) prevRow!,
+      if (sharedNext) nextRow!,
+    ];
+
+    await _writeTimes(
+      entry.copyWith(
+        startUtc: startUtc,
+        endUtc: endUtc,
+        clearEnd: endUtc == null,
+      ),
+      now,
     );
-    await _writeTimes(updated, now);
+    if (sharedPrev) {
+      await _writeTimes(prev.copyWith(endUtc: startUtc), now);
+    }
+    if (sharedNext && endUtc != null) {
+      await _writeTimes(next.copyWith(startUtc: endUtc), now);
+    }
+
     await _validateAround(entryId, now);
-    return _undoToken('Changed times', snapshots: <TimeEntryRow>[row]);
+    if (sharedPrev) await _validateAround(prev.id, now);
+    if (sharedNext) await _validateAround(next.id, now);
+
+    return _undoToken('Changed times', snapshots: snapshots);
   });
 
   /// Splits one entry in two at [atUtc], both halves keeping the activity and

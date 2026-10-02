@@ -11,6 +11,7 @@ import 'package:time_log/src/domain/models/app_settings.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/timeline/day_window.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
+import 'package:time_log/src/features/entry/entry_providers.dart';
 import 'package:time_log/src/features/today/today_providers.dart';
 
 class MockTimelineWriter extends Mock implements TimelineWriter {}
@@ -32,6 +33,7 @@ class WidgetHarness {
     this.suggestions = const <ActivitySuggestion>[],
     this.lastFinished,
     this.dayWindows,
+    this.neighbours = (previous: null, next: null),
   }) : clock = FakeClock(now ?? DateTime.utc(2026, 3, 10, 14, 32));
 
   final FakeClock clock;
@@ -45,6 +47,10 @@ class WidgetHarness {
   /// Lets a test hand the calendar a 23- or 25-hour day without depending on the
   /// time zone of the machine running the tests.
   final DayWindowCalculator? dayWindows;
+
+  /// The entries on either side of whichever entry a sheet is showing, which
+  /// decide whether its boundaries are shared or free (SPEC §7.1).
+  final EntryNeighbours neighbours;
 
   final MockTimelineWriter writer = MockTimelineWriter();
 
@@ -77,6 +83,7 @@ class WidgetHarness {
             (ref) => Stream<Map<String, Activity>>.value(activities),
           ),
           lastFinishedEntryProvider.overrideWith((ref) async => lastFinished),
+          entryNeighboursProvider.overrideWith((ref, id) async => neighbours),
           activitySuggestionsProvider.overrideWith(
             (ref, query) => Stream<List<ActivitySuggestion>>.value(
               query.isEmpty
@@ -145,3 +152,18 @@ ActivitySuggestion suggestionFor({
   lastUsed: lastUsed,
   isPrefixMatch: false,
 );
+
+/// UTC calendar days, so a test can reason about pixel offsets without the host
+/// time zone shifting everything.
+abstract final class FixedUtcDay {
+  static DayWindow _day(int day) => DayWindow(
+    startUtc: DateTime.utc(2026, 3, day),
+    endUtc: DateTime.utc(2026, 3, day + 1),
+    year: 2026,
+    month: 3,
+    day: day,
+  );
+
+  static DayWindowCalculator calculator() =>
+      FixedDayWindowCalculator(<DayWindow>[_day(9), _day(10), _day(11)]);
+}
