@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../domain/models/activity.dart';
+
 /// The activity colour pair for one block: its fill and the text drawn on it.
 @immutable
 class ActivityColors {
@@ -33,7 +35,7 @@ abstract final class ActivityPalette {
     342,
   ];
 
-  static const int length = 12;
+  static int get length => Activity.colorSeedCount;
 
   // Light theme: pale fill, near-black text. Dark theme: deep fill, near-white text.
   static const double _lightFill = 0.86;
@@ -60,17 +62,8 @@ abstract final class ActivityPalette {
     );
   }
 
-  /// The seed to give a new activity: the least-used slot, lowest index winning
-  /// ties so the first twelve activities each get their own hue.
-  static int nextSeed(Iterable<int> usedSeeds) {
-    final counts = List<int>.filled(length, 0);
-    for (final s in usedSeeds) {
-      counts[s.remainder(length).abs()]++;
-    }
-    var best = 0;
-    for (var i = 1; i < length; i++) {
-      if (counts[i] < counts[best]) best = i;
-    }
-    return best;
-  }
+  /// Delegates to [Activity.nextColorSeed]; allocation is domain logic, the
+  /// hues are presentation.
+  static int nextSeed(Iterable<int> usedSeeds) =>
+      Activity.nextColorSeed(usedSeeds);
 }

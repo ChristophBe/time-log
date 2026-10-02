@@ -83,8 +83,10 @@ maps to a named test in §12.
 1. **Single running entry.** At most one entry has `endAt == null`.
 2. **No overlap.** For any two live entries, their half-open intervals `[startAt, endAt)` do not
    intersect. The running entry is treated as `[startAt, ∞)`.
-3. **Positive duration.** `endAt > startAt`, and `endAt - startAt >= 1 minute` for any entry that
-   is not running.
+3. **Positive duration.** `endAt > startAt` for every finished entry. The **one-minute minimum is a
+   constraint on editing**, not on storage (§7.2): a genuinely 20-second span recorded by Stop is
+   kept exactly as it happened, because rounding it up to a minute would record time that did not
+   occur. The minimum exists so dragging cannot produce degenerate, unhittable blocks.
 4. **Handover is seamless.** When starting B stops A, `A.endAt == B.startAt` exactly — no gap and
    no overlap is introduced by the act of switching.
 5. **No future starts.** `startAt <= now` for the running entry. Finished entries may not end in
@@ -222,8 +224,14 @@ Edge cases:
 
 ### 6.2 Stop
 
-Set `endUtc = now` on the running entry. If the result would be under 1 minute, offer
-"discard instead" in the confirmation SnackBar rather than silently keeping or deleting it.
+Set `endUtc = now` on the running entry — exactly now, never rounded. If the span came out under a
+minute the entry is still kept, and the confirmation SnackBar offers **Discard** in place of Undo,
+since at that length the likelier intent is "that was a mistake".
+
+This is deliberately *not* the same as §6.1's handling of an immediate switch. Switching within a
+minute says "I mis-started and the real activity is this other one", so the mis-start is replaced.
+Stopping within a minute says "that is what I did", so it is recorded and you are offered the
+discard.
 
 ### 6.3 Resume
 

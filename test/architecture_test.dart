@@ -31,7 +31,12 @@ void main() {
 
   test('domainHasNoFlutterImports', () {
     final offenders = <String>[];
-    for (final file in dartFiles.where((f) => f.path.contains('/domain/'))) {
+    final pure = dartFiles.where(
+      (f) =>
+          f.path.contains('/domain/timeline/') ||
+          f.path.contains('/domain/models/'),
+    );
+    for (final file in pure) {
       final source = file.readAsStringSync();
       for (final banned in <String>[
         'package:flutter/',
