@@ -245,22 +245,34 @@ class _DatabaseError extends StatelessWidget {
   final Object error;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const Icon(Icons.error_outline, size: 48),
-          const SizedBox(height: 12),
-          const Text(
-            'Your time log could not be opened.',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text('$error', textAlign: TextAlign.center),
-        ],
+  Widget build(BuildContext context) {
+    // Also to the console, so a failure is diagnosable from a log rather than
+    // only from the screen.
+    debugPrint('time-log: the database could not be opened: $error');
+    return Center(
+      // Scrollable and bounded: a database error can carry a very long message,
+      // and an error screen that overflows is no help to anyone.
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.error_outline, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'Your time log could not be opened.',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$error',
+              textAlign: TextAlign.center,
+              maxLines: 12,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
