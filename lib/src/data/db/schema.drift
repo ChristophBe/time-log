@@ -1,0 +1,78 @@
+-- Schema for time-log. This is SPEC.md §5.2 verbatim; keep the two in sync.
+--
+-- Expressed as SQL rather than drift's Dart DSL on purpose: the single-running-entry
+-- invariant (SPEC §4.1) relies on exact SQLite semantics -- NULLs are distinct in a
+-- UNIQUE index, so `is_running` can hold 1 for at most one row.
+
+CREATE TABLE activities (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  name_key   TEXT    NOT NULL UNIQUE,
+  color_seed INTEGER NOT NULL,
+  archived   INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) AS ActivityRow;
+
+CREATE TABLE time_entries (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  activity_id TEXT    NOT NULL REFERENCES activities(id),
+  note        TEXT,
+  start_utc   INTEGER NOT NULL,
+  end_utc     INTEGER,
+  tz_name     TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  deleted_at  INTEGER,
+  -- 1 only while this row is the live running entry, NULL otherwise.
+  is_running  INTEGER GENERATED ALWAYS AS (
+                CASE WHEN end_utc IS NULL AND deleted_at IS NULL THEN 1 END) VIRTUAL,
+  CHECK (end_utc IS NULL OR end_utc > start_utc)
+) AS TimeEntryRow;
+
+CREATE UNIQUE INDEX ux_entries_single_running ON time_entries (is_running);
+CREATE        INDEX ix_entries_start          ON time_entries (start_utc);
+CREATE        INDEX ix_entries_activity_start ON time_entries (activity_id, start_utc);
+
+CREATE TABLE settings_row (
+  id                INTEGER NOT NULL PRIMARY KEY DEFAULT 1,
+  snap_minutes      INTEGER NOT NULL DEFAULT 5,
+  use24HourClock    INTEGER NOT NULL DEFAULT 1,
+  theme_mode        TEXT    NOT NULL DEFAULT 'system',
+  pixels_per_hour   REAL    NOT NULL DEFAULT 72.0,
+  continue_minutes  INTEGER NOT NULL DEFAULT 5,
+  CHECK (id = 1)
+) AS SettingsRowData;
+
+-- Entries overlapping the half-open window [:rangeStart, :rangeEnd), oldest first.
+-- A running entry is treated as reaching to infinity, hence the end_utc IS NULL arm.
+entriesInRange:
+  SELECT * FROM time_entries
+  WHERE deleted_at IS NULL
+    AND start_utc < :rangeEnd
+    AND (end_utc IS NULL OR end_utc > :rangeStart)
+  ORDER BY start_utc;
+
+runningEntry:
+  SELECT * FROM time_entries WHERE is_running = 1;
+
+lastFinishedEntry:
+  SELECT * FROM time_entries
+  WHERE deleted_at IS NULL AND end_utc IS NOT NULL
+  ORDER BY end_utc DESC LIMIT 1;
+
+entryEndingAtOrBefore:
+  SELECT * FROM time_entries
+  WHERE deleted_at IS NULL AND id != :excludeId AND start_utc < :instant
+  ORDER BY start_utc DESC LIMIT 1;
+
+entryStartingAfter:
+  SELECT * FROM time_entries
+  WHERE deleted_at IS NULL AND id != :excludeId AND start_utc > :instant
+  ORDER BY start_utc ASC LIMIT 1;
+
+activityUsageSince:
+  SELECT a.**, e.start_utc AS used_at
+  FROM activities a
+  INNER JOIN time_entries e ON e.activity_id = a.id
+  WHERE a.archived = 0 AND e.deleted_at IS NULL AND e.start_utc >= :since;
