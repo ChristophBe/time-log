@@ -5,10 +5,35 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = time_log
+PRODUCT_NAME = Time Log
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = dev.christophbecker.timeLog
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 dev.christophbecker. All rights reserved.
+
+// Developer ID signing, Release only. `flutter run -d macos` keeps Xcode's stock ad-hoc
+// signature, so a checkout on a machine without this certificate still builds and runs.
+//
+// These belong here rather than in Release.xcconfig because this file is the Runner
+// target's base configuration: a project-level xcconfig loses to the project-level
+// `CODE_SIGN_IDENTITY = "-"` in project.pbxproj, and a target-level one wins.
+//
+// Hardened runtime is a precondition for notarisation. Flutter release builds are AOT
+// compiled, so no `allow-jit` entitlement comes with it.
+DEVELOPMENT_TEAM = X5HR67U389
+CODE_SIGN_IDENTITY[config=Release][sdk=*][arch=*] = Developer ID Application
+ENABLE_HARDENED_RUNTIME[config=Release][sdk=*][arch=*] = YES
+
+// Xcode injects `com.apple.security.get-task-allow` — the entitlement that lets a debugger
+// attach — into anything built with `xcodebuild build` rather than `xcodebuild archive`,
+// and `flutter build macos` uses the former. Notarisation rejects a Developer ID binary
+// that carries it, so turn the injection off for Release.
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS[config=Release][sdk=*][arch=*] = NO
+
+// Xcode only asks Apple's timestamp server for a *secure* timestamp when archiving; a
+// plain `xcodebuild build` records a local `Signed Time` instead, and notarisation
+// rejects that. Flutter's embed step already timestamps the frameworks it signs, so this
+// is about the main executable.
+OTHER_CODE_SIGN_FLAGS[config=Release][sdk=*][arch=*] = --timestamp

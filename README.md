@@ -68,11 +68,36 @@ flutter run -d chrome            # or: -d macos, -d android, …
 Code generation is required after changing anything under `lib/src/data/db/` or any `@riverpod`
 provider. `dart run build_runner watch` during development.
 
+### Releasing on macOS
+
+`tool/release_macos.sh` produces a Developer ID build: signed, hardened, notarised by Apple,
+stapled, and packaged as a universal `build/release/time-log-<version>.dmg` that opens on any Mac
+without a Gatekeeper warning. This is direct distribution, not the App Store.
+
+```sh
+./tool/release_macos.sh
+SKIP_NOTARIZE=1 ./tool/release_macos.sh   # build and sign only, no round trip to Apple
+```
+
+Notarising needs credentials in the keychain once per machine. An App Store Connect API key
+(Users and Access → Integrations, role *Developer*) rather than an app-specific password: it
+survives a password change and is what a CI runner would use. The `.p8` stays out of the repo.
+
+```sh
+xcrun notarytool store-credentials time-log-notary \
+  --key ~/private_keys/AuthKey_XXXXXXXXXX.p8 --key-id XXXXXXXXXX --issuer <issuer-uuid>
+```
+
+Signing settings live in `macos/Runner/Configs/AppInfo.xcconfig`, scoped to the Release
+configuration so `flutter run -d macos` keeps Xcode's ad-hoc signature and a checkout without the
+certificate still builds. Both entitlements files grant `files.user-selected.read-only`, which a
+sandboxed app needs before the file picker can hand back a backup to import.
+
 ### Platform notes
 
-The app targets Android, iOS, macOS, Windows, Linux and web from one codebase. Only **web** has been
-built and run so far, because this machine has no Android SDK and no Xcode — the other platform
-folders are scaffolded and should build once those toolchains are installed, but that is unverified.
+The app targets Android, iOS, macOS, Windows, Linux and web from one codebase. **Web** and **macOS**
+have been built and run; the Android, iOS, Windows and Linux folders are scaffolded and should build
+once those toolchains are installed, but that is unverified — this machine has no Android SDK.
 
 Correctness does not depend on a device: all 379 tests run on the Dart VM.
 
