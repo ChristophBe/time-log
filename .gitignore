@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Golden-test diff output, written when a golden does not match.
+test/**/failures/

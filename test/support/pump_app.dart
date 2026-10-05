@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:time_log/src/app/theme.dart';
@@ -15,6 +16,14 @@ import 'package:time_log/src/features/entry/entry_providers.dart';
 import 'package:time_log/src/features/today/today_providers.dart';
 
 class MockTimelineWriter extends Mock implements TimelineWriter {}
+
+/// Settings live in the database (see `SettingsRepository`), so a screen that
+/// writes one would otherwise open a real one inside a widget test.
+class MockSettingsRepository extends Mock implements SettingsRepository {}
+
+/// The read side, for screens that query it directly rather than through one
+/// of the day providers — the export sheet asks for an arbitrary range.
+class MockTimeEntryRepository extends Mock implements TimeEntryRepository {}
 
 /// Widget tests run against fixed provider state and a mock writer rather than a
 /// real database.
@@ -53,13 +62,25 @@ class WidgetHarness {
   final EntryNeighbours neighbours;
 
   final MockTimelineWriter writer = MockTimelineWriter();
+  final MockSettingsRepository settingsRepository = MockSettingsRepository();
+  final MockTimeEntryRepository entryRepository = MockTimeEntryRepository();
 
   Future<void> pump(
     WidgetTester tester,
     Widget child, {
     TextScaler textScaler = TextScaler.noScaling,
     Size surfaceSize = const Size(420, 900),
+    Brightness brightness = Brightness.light,
+    List<Override> extraOverrides = const <Override>[],
+    RouterConfig<Object>? routerConfig,
   }) async {
+    when(() => settingsRepository.save(any())).thenAnswer((_) async {});
+    // Whatever this harness was given, for any range asked for. A test that
+    // cares about the range stubs it again itself.
+    when(() => entryRepository.watchEntriesInRange(any(), any()))
+        .thenAnswer((_) => Stream<List<TimeEntry>>.value(entries));
+    when(() => entryRepository.watchActivitiesById())
+        .thenAnswer((_) => Stream<Map<String, Activity>>.value(activities));
     await tester.binding.setSurfaceSize(surfaceSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -70,6 +91,8 @@ class WidgetHarness {
           if (dayWindows != null)
             dayWindowsProvider.overrideWithValue(dayWindows!),
           timelineWriterProvider.overrideWithValue(writer),
+          settingsRepositoryProvider.overrideWithValue(settingsRepository),
+          timeEntryRepositoryProvider.overrideWithValue(entryRepository),
           appSettingsProvider.overrideWith(
             (ref) => Stream<AppSettings>.value(settings),
           ),
@@ -103,17 +126,32 @@ class WidgetHarness {
           coarseTickerProvider.overrideWith(
             (ref) => Stream<DateTime>.value(clock.nowUtc()),
           ),
+          // Last, so a test can replace anything above it.
+          ...extraOverrides,
         ],
-        child: MaterialApp(
-          theme: buildAppTheme(Brightness.light),
-          // Override only the text scaler, inside MaterialApp, so the rest of
-          // the MediaQuery (notably the surface size) is preserved.
-          builder: (context, body) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: body!,
-          ),
-          home: child,
-        ),
+        child: routerConfig != null
+            ? MaterialApp.router(
+                routerConfig: routerConfig,
+                theme: buildAppTheme(brightness),
+                debugShowCheckedModeBanner: false,
+                builder: (context, body) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                  child: body!,
+                ),
+              )
+            : MaterialApp(
+                theme: buildAppTheme(brightness),
+                // Off, as in the real app: the banner sits over the header's
+                // trailing controls and would hide them in every golden.
+                debugShowCheckedModeBanner: false,
+                // Override only the text scaler, inside MaterialApp, so the rest of
+                // the MediaQuery (notably the surface size) is preserved.
+                builder: (context, body) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                  child: body!,
+                ),
+                home: child,
+              ),
       ),
     );
     await tester.pumpAndSettle();

@@ -1,11 +1,11 @@
 {
-    "name": "time_log",
-    "short_name": "time_log",
+    "name": "time-log",
+    "short_name": "time-log",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#17171A",
+    "theme_color": "#17171A",
+    "description": "Log what you are doing during the day, and read the day back as a calendar.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

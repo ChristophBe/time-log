@@ -1119,6 +1119,30 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
     $customConstraints: 'NOT NULL DEFAULT 5',
     defaultValue: const CustomExpression('5'),
   );
+  static const VerificationMeta _firstDayOfWeekMeta = const VerificationMeta(
+    'firstDayOfWeek',
+  );
+  late final GeneratedColumn<int> firstDayOfWeek = GeneratedColumn<int>(
+    'first_day_of_week',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
+    defaultValue: const CustomExpression('0'),
+  );
+  static const VerificationMeta _longRunMinutesMeta = const VerificationMeta(
+    'longRunMinutes',
+  );
+  late final GeneratedColumn<int> longRunMinutes = GeneratedColumn<int>(
+    'long_run_minutes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 480',
+    defaultValue: const CustomExpression('480'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1127,6 +1151,8 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
     themeMode,
     pixelsPerHour,
     continueMinutes,
+    firstDayOfWeek,
+    longRunMinutes,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1185,6 +1211,24 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
         ),
       );
     }
+    if (data.containsKey('first_day_of_week')) {
+      context.handle(
+        _firstDayOfWeekMeta,
+        firstDayOfWeek.isAcceptableOrUnknown(
+          data['first_day_of_week']!,
+          _firstDayOfWeekMeta,
+        ),
+      );
+    }
+    if (data.containsKey('long_run_minutes')) {
+      context.handle(
+        _longRunMinutesMeta,
+        longRunMinutes.isAcceptableOrUnknown(
+          data['long_run_minutes']!,
+          _longRunMinutesMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1218,6 +1262,14 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
         DriftSqlType.int,
         data['${effectivePrefix}continue_minutes'],
       )!,
+      firstDayOfWeek: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}first_day_of_week'],
+      )!,
+      longRunMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}long_run_minutes'],
+      )!,
     );
   }
 
@@ -1239,6 +1291,11 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
   final String themeMode;
   final double pixelsPerHour;
   final int continueMinutes;
+
+  /// Added in schema v2. 0 means "follow the locale"; 1..7 are DateTime's
+  /// weekday constants.
+  final int firstDayOfWeek;
+  final int longRunMinutes;
   const SettingsRowData({
     required this.id,
     required this.snapMinutes,
@@ -1246,6 +1303,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     required this.themeMode,
     required this.pixelsPerHour,
     required this.continueMinutes,
+    required this.firstDayOfWeek,
+    required this.longRunMinutes,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1256,6 +1315,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     map['theme_mode'] = Variable<String>(themeMode);
     map['pixels_per_hour'] = Variable<double>(pixelsPerHour);
     map['continue_minutes'] = Variable<int>(continueMinutes);
+    map['first_day_of_week'] = Variable<int>(firstDayOfWeek);
+    map['long_run_minutes'] = Variable<int>(longRunMinutes);
     return map;
   }
 
@@ -1267,6 +1328,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       themeMode: Value(themeMode),
       pixelsPerHour: Value(pixelsPerHour),
       continueMinutes: Value(continueMinutes),
+      firstDayOfWeek: Value(firstDayOfWeek),
+      longRunMinutes: Value(longRunMinutes),
     );
   }
 
@@ -1282,6 +1345,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       themeMode: serializer.fromJson<String>(json['theme_mode']),
       pixelsPerHour: serializer.fromJson<double>(json['pixels_per_hour']),
       continueMinutes: serializer.fromJson<int>(json['continue_minutes']),
+      firstDayOfWeek: serializer.fromJson<int>(json['first_day_of_week']),
+      longRunMinutes: serializer.fromJson<int>(json['long_run_minutes']),
     );
   }
   @override
@@ -1294,6 +1359,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       'theme_mode': serializer.toJson<String>(themeMode),
       'pixels_per_hour': serializer.toJson<double>(pixelsPerHour),
       'continue_minutes': serializer.toJson<int>(continueMinutes),
+      'first_day_of_week': serializer.toJson<int>(firstDayOfWeek),
+      'long_run_minutes': serializer.toJson<int>(longRunMinutes),
     };
   }
 
@@ -1304,6 +1371,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     String? themeMode,
     double? pixelsPerHour,
     int? continueMinutes,
+    int? firstDayOfWeek,
+    int? longRunMinutes,
   }) => SettingsRowData(
     id: id ?? this.id,
     snapMinutes: snapMinutes ?? this.snapMinutes,
@@ -1311,6 +1380,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     themeMode: themeMode ?? this.themeMode,
     pixelsPerHour: pixelsPerHour ?? this.pixelsPerHour,
     continueMinutes: continueMinutes ?? this.continueMinutes,
+    firstDayOfWeek: firstDayOfWeek ?? this.firstDayOfWeek,
+    longRunMinutes: longRunMinutes ?? this.longRunMinutes,
   );
   SettingsRowData copyWithCompanion(SettingsRowCompanion data) {
     return SettingsRowData(
@@ -1328,6 +1399,12 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       continueMinutes: data.continueMinutes.present
           ? data.continueMinutes.value
           : this.continueMinutes,
+      firstDayOfWeek: data.firstDayOfWeek.present
+          ? data.firstDayOfWeek.value
+          : this.firstDayOfWeek,
+      longRunMinutes: data.longRunMinutes.present
+          ? data.longRunMinutes.value
+          : this.longRunMinutes,
     );
   }
 
@@ -1339,7 +1416,9 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
           ..write('use24HourClock: $use24HourClock, ')
           ..write('themeMode: $themeMode, ')
           ..write('pixelsPerHour: $pixelsPerHour, ')
-          ..write('continueMinutes: $continueMinutes')
+          ..write('continueMinutes: $continueMinutes, ')
+          ..write('firstDayOfWeek: $firstDayOfWeek, ')
+          ..write('longRunMinutes: $longRunMinutes')
           ..write(')'))
         .toString();
   }
@@ -1352,6 +1431,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     themeMode,
     pixelsPerHour,
     continueMinutes,
+    firstDayOfWeek,
+    longRunMinutes,
   );
   @override
   bool operator ==(Object other) =>
@@ -1362,7 +1443,9 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
           other.use24HourClock == this.use24HourClock &&
           other.themeMode == this.themeMode &&
           other.pixelsPerHour == this.pixelsPerHour &&
-          other.continueMinutes == this.continueMinutes);
+          other.continueMinutes == this.continueMinutes &&
+          other.firstDayOfWeek == this.firstDayOfWeek &&
+          other.longRunMinutes == this.longRunMinutes);
 }
 
 class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
@@ -1372,6 +1455,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
   final Value<String> themeMode;
   final Value<double> pixelsPerHour;
   final Value<int> continueMinutes;
+  final Value<int> firstDayOfWeek;
+  final Value<int> longRunMinutes;
   const SettingsRowCompanion({
     this.id = const Value.absent(),
     this.snapMinutes = const Value.absent(),
@@ -1379,6 +1464,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     this.themeMode = const Value.absent(),
     this.pixelsPerHour = const Value.absent(),
     this.continueMinutes = const Value.absent(),
+    this.firstDayOfWeek = const Value.absent(),
+    this.longRunMinutes = const Value.absent(),
   });
   SettingsRowCompanion.insert({
     this.id = const Value.absent(),
@@ -1387,6 +1474,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     this.themeMode = const Value.absent(),
     this.pixelsPerHour = const Value.absent(),
     this.continueMinutes = const Value.absent(),
+    this.firstDayOfWeek = const Value.absent(),
+    this.longRunMinutes = const Value.absent(),
   });
   static Insertable<SettingsRowData> custom({
     Expression<int>? id,
@@ -1395,6 +1484,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     Expression<String>? themeMode,
     Expression<double>? pixelsPerHour,
     Expression<int>? continueMinutes,
+    Expression<int>? firstDayOfWeek,
+    Expression<int>? longRunMinutes,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1403,6 +1494,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
       if (themeMode != null) 'theme_mode': themeMode,
       if (pixelsPerHour != null) 'pixels_per_hour': pixelsPerHour,
       if (continueMinutes != null) 'continue_minutes': continueMinutes,
+      if (firstDayOfWeek != null) 'first_day_of_week': firstDayOfWeek,
+      if (longRunMinutes != null) 'long_run_minutes': longRunMinutes,
     });
   }
 
@@ -1413,6 +1506,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     Value<String>? themeMode,
     Value<double>? pixelsPerHour,
     Value<int>? continueMinutes,
+    Value<int>? firstDayOfWeek,
+    Value<int>? longRunMinutes,
   }) {
     return SettingsRowCompanion(
       id: id ?? this.id,
@@ -1421,6 +1516,8 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
       themeMode: themeMode ?? this.themeMode,
       pixelsPerHour: pixelsPerHour ?? this.pixelsPerHour,
       continueMinutes: continueMinutes ?? this.continueMinutes,
+      firstDayOfWeek: firstDayOfWeek ?? this.firstDayOfWeek,
+      longRunMinutes: longRunMinutes ?? this.longRunMinutes,
     );
   }
 
@@ -1445,6 +1542,12 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     if (continueMinutes.present) {
       map['continue_minutes'] = Variable<int>(continueMinutes.value);
     }
+    if (firstDayOfWeek.present) {
+      map['first_day_of_week'] = Variable<int>(firstDayOfWeek.value);
+    }
+    if (longRunMinutes.present) {
+      map['long_run_minutes'] = Variable<int>(longRunMinutes.value);
+    }
     return map;
   }
 
@@ -1456,7 +1559,9 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
           ..write('use24HourClock: $use24HourClock, ')
           ..write('themeMode: $themeMode, ')
           ..write('pixelsPerHour: $pixelsPerHour, ')
-          ..write('continueMinutes: $continueMinutes')
+          ..write('continueMinutes: $continueMinutes, ')
+          ..write('firstDayOfWeek: $firstDayOfWeek, ')
+          ..write('longRunMinutes: $longRunMinutes')
           ..write(')'))
         .toString();
   }
@@ -2289,6 +2394,8 @@ typedef $SettingsRowCreateCompanionBuilder = SettingsRowCompanion Function({
   Value<String> themeMode,
   Value<double> pixelsPerHour,
   Value<int> continueMinutes,
+  Value<int> firstDayOfWeek,
+  Value<int> longRunMinutes,
 });
 typedef $SettingsRowUpdateCompanionBuilder = SettingsRowCompanion Function({
   Value<int> id,
@@ -2297,6 +2404,8 @@ typedef $SettingsRowUpdateCompanionBuilder = SettingsRowCompanion Function({
   Value<String> themeMode,
   Value<double> pixelsPerHour,
   Value<int> continueMinutes,
+  Value<int> firstDayOfWeek,
+  Value<int> longRunMinutes,
 });
 
 class $SettingsRowFilterComposer extends Composer<_$AppDatabase, SettingsRow> {
@@ -2334,6 +2443,16 @@ class $SettingsRowFilterComposer extends Composer<_$AppDatabase, SettingsRow> {
 
   ColumnFilters<int> get continueMinutes => $composableBuilder(
     column: $table.continueMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get firstDayOfWeek => $composableBuilder(
+    column: $table.firstDayOfWeek,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get longRunMinutes => $composableBuilder(
+    column: $table.longRunMinutes,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -2376,6 +2495,16 @@ class $SettingsRowOrderingComposer
     column: $table.continueMinutes,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get firstDayOfWeek => $composableBuilder(
+    column: $table.firstDayOfWeek,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get longRunMinutes => $composableBuilder(
+    column: $table.longRunMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $SettingsRowAnnotationComposer
@@ -2410,6 +2539,16 @@ class $SettingsRowAnnotationComposer
 
   GeneratedColumn<int> get continueMinutes => $composableBuilder(
     column: $table.continueMinutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get firstDayOfWeek => $composableBuilder(
+    column: $table.firstDayOfWeek,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get longRunMinutes => $composableBuilder(
+    column: $table.longRunMinutes,
     builder: (column) => column,
   );
 }
@@ -2451,6 +2590,8 @@ class $SettingsRowTableManager
                 Value<String> themeMode = const Value.absent(),
                 Value<double> pixelsPerHour = const Value.absent(),
                 Value<int> continueMinutes = const Value.absent(),
+                Value<int> firstDayOfWeek = const Value.absent(),
+                Value<int> longRunMinutes = const Value.absent(),
               }) => SettingsRowCompanion(
                 id: id,
                 snapMinutes: snapMinutes,
@@ -2458,6 +2599,8 @@ class $SettingsRowTableManager
                 themeMode: themeMode,
                 pixelsPerHour: pixelsPerHour,
                 continueMinutes: continueMinutes,
+                firstDayOfWeek: firstDayOfWeek,
+                longRunMinutes: longRunMinutes,
               ),
           createCompanionCallback:
               ({
@@ -2467,6 +2610,8 @@ class $SettingsRowTableManager
                 Value<String> themeMode = const Value.absent(),
                 Value<double> pixelsPerHour = const Value.absent(),
                 Value<int> continueMinutes = const Value.absent(),
+                Value<int> firstDayOfWeek = const Value.absent(),
+                Value<int> longRunMinutes = const Value.absent(),
               }) => SettingsRowCompanion.insert(
                 id: id,
                 snapMinutes: snapMinutes,
@@ -2474,6 +2619,8 @@ class $SettingsRowTableManager
                 themeMode: themeMode,
                 pixelsPerHour: pixelsPerHour,
                 continueMinutes: continueMinutes,
+                firstDayOfWeek: firstDayOfWeek,
+                longRunMinutes: longRunMinutes,
               ),
           withReferenceMapper: (p0) => p0
               .map(

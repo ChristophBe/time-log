@@ -22,6 +22,10 @@ class TimeEntry {
   final String tzName;
   final String? note;
 
+  /// Longest acceptable note (SPEC §5.1). Enforced by the writer rather than
+  /// only by the text field, so no code path can store a longer one.
+  static const int maxNoteLength = 2000;
+
   bool get isRunning => endUtc == null;
 
   /// The end of this entry, treating a running entry as ending "now".

@@ -33,6 +33,13 @@ void showUndoableFeedback(
     SnackBar(
       content: Text(message),
       duration: kUndoWindow,
+      // Explicit, because `SnackBar.persist` defaults to `action != null`:
+      // without this, every SnackBar that carries an Undo would ignore its own
+      // duration and sit on the screen until it was tapped or dismissed. The
+      // undo window is eight seconds and then the offer is gone (SPEC §7.5) --
+      // and on Today the bar sits directly over the start composer, which has
+      // to be reachable at any moment (SPEC §8.1).
+      persist: false,
       action:
           extraAction ??
           (undo == null

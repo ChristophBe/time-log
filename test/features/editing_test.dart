@@ -280,6 +280,7 @@ void main() {
       WidgetTester tester, {
       TimeEntry? target,
       EntryNeighbours neighbours = const (previous: null, next: null),
+      Size surfaceSize = const Size(420, 900),
     }) async {
       final h = WidgetHarness(
         now: now,
@@ -302,6 +303,12 @@ void main() {
           atUtc: any(named: 'atUtc'),
         ),
       ).thenAnswer((_) async => UndoToken('x', () async {}));
+      when(
+        () => h.writer.setEntryNote(
+          entryId: any(named: 'entryId'),
+          note: any(named: 'note'),
+        ),
+      ).thenAnswer((_) async => UndoToken('x', () async {}));
       await h.pump(
         tester,
         Scaffold(
@@ -312,11 +319,64 @@ void main() {
             ),
           ),
         ),
+        surfaceSize: surfaceSize,
       );
       await tester.tap(find.text('open sheet'));
       await tester.pumpAndSettle();
       return h;
     }
+
+    testWidgets('the note is editable in place and commits itself', (
+      tester,
+    ) async {
+      final noted = entryFor(
+        id: 'e1',
+        activityId: specs.id,
+        start: DateTime.utc(2026, 3, 10, 13),
+        end: DateTime.utc(2026, 3, 10, 14),
+        note: 'chapter 3',
+      );
+      final h = await pumpSheet(tester, target: noted);
+
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('entry-sheet-note')))
+            .controller!
+            .text,
+        'chapter 3',
+        reason: 'SPEC §8.4.1: the note is inline-editable, not read-only',
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('entry-sheet-note')),
+        'chapter 4',
+      );
+      // Committing on focus loss, rather than through Save, is what makes one
+      // note change one undo step instead of being bundled with a time change
+      // (SPEC §7.5). Enter is not a commit: a note may want a second line.
+      tester.binding.focusManager.primaryFocus!.unfocus();
+      await tester.pumpAndSettle();
+
+      verify(() => h.writer.setEntryNote(entryId: 'e1', note: 'chapter 4'))
+          .called(1);
+      expect(find.text('Note changed'), findsOneWidget);
+    });
+
+    testWidgets('an unchanged note is not written', (tester) async {
+      final h = await pumpSheet(tester);
+
+      await tester.tap(find.byKey(const Key('entry-sheet-note')));
+      await tester.pumpAndSettle();
+      tester.binding.focusManager.primaryFocus!.unfocus();
+      await tester.pumpAndSettle();
+
+      verifyNever(
+        () => h.writer.setEntryNote(
+          entryId: any(named: 'entryId'),
+          note: any(named: 'note'),
+        ),
+      );
+    });
 
     testWidgets('shows start, end and duration', (tester) async {
       await pumpSheet(tester);
@@ -326,7 +386,9 @@ void main() {
       expect(find.text('Duration'), findsOneWidget);
       expect(find.text('14:00'), findsOneWidget);
       expect(find.text('15:00'), findsOneWidget);
-      expect(find.text('1:00'), findsOneWidget);
+      // A duration carries its units; the colon is reserved for the two clock
+      // times above it (SPEC §9.8).
+      expect(find.text('1 h'), findsOneWidget);
     });
 
     testWidgets('the end stepper changes the end and the duration together', (
@@ -338,7 +400,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('15:05'), findsOneWidget);
-      expect(find.text('1:05'), findsOneWidget, reason: 'SPEC §8.4');
+      // The point of the format rule, on one screen: 15:05 is a time of day,
+      // 1 h 05 min is a length, and they no longer look alike.
+      expect(find.text('1 h 05 min'), findsOneWidget, reason: 'SPEC §8.4');
     });
 
     testWidgets('the duration stepper moves the end, not the start', (
@@ -438,10 +502,28 @@ void main() {
       expect(find.text('Undo'), findsOneWidget);
     });
 
-    testWidgets('Split cuts the entry at its midpoint', (tester) async {
-      final h = await pumpSheet(tester);
+    testWidgets('Split asks where, starting from the midpoint', (tester) async {
+      // SPEC §6.6 splits at a chosen instant. The midpoint is the picker's
+      // opening value, not the answer. A wider surface, because Material's
+      // time picker dialog does not fit a 420dp one.
+      final h = await pumpSheet(tester, surfaceSize: const Size(700, 900));
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Split in half'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Split here…'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(TimePickerDialog),
+        findsOneWidget,
+        reason: 'it asks before it cuts',
+      );
+      verifyNever(
+        () => h.writer.split(
+          entryId: any(named: 'entryId'),
+          atUtc: any(named: 'atUtc'),
+        ),
+      );
+
+      await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
       verify(
@@ -450,6 +532,22 @@ void main() {
           atUtc: DateTime.utc(2026, 3, 10, 13, 30),
         ),
       ).called(1);
+    });
+
+    testWidgets('a cancelled split cuts nothing', (tester) async {
+      final h = await pumpSheet(tester, surfaceSize: const Size(700, 900));
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Split here…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      verifyNever(
+        () => h.writer.split(
+          entryId: any(named: 'entryId'),
+          atUtc: any(named: 'atUtc'),
+        ),
+      );
     });
 
     testWidgets('the running entry shows no end field and cannot be split', (
@@ -464,10 +562,7 @@ void main() {
 
       expect(find.text('running'), findsOneWidget);
       expect(find.byTooltip('End 5 minutes later'), findsNothing);
-      expect(
-        find.widgetWithText(OutlinedButton, 'Split in half'),
-        findsNothing,
-      );
+      expect(find.widgetWithText(OutlinedButton, 'Split here…'), findsNothing);
       expect(find.widgetWithText(OutlinedButton, 'Resume'), findsNothing);
     });
 

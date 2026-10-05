@@ -4,6 +4,14 @@ import 'package:flutter/foundation.dart';
 
 part 'database.g.dart';
 
+/// Whether the browser gave us storage that will not survive the tab closing
+/// (SPEC §9.5).
+///
+/// A notifier rather than a provider because it is set from inside the database
+/// constructor's callback, before any container exists. False everywhere but
+/// the web, where a private window can leave drift with nothing but memory.
+final ValueNotifier<bool> webStorageIsTemporary = ValueNotifier<bool>(false);
+
 @DriftDatabase(include: {'schema.drift'})
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
@@ -31,11 +39,39 @@ class AppDatabase extends _$AppDatabase {
                   'unavailable: ${result.missingFeatures.join(', ')}',
                 );
               }
+              // In-memory means a private window or a browser with nothing on
+              // offer: the data goes when the tab does, and the app says so
+              // rather than letting it look safe (SPEC §9.5).
+              webStorageIsTemporary.value =
+                  result.chosenImplementation ==
+                  WasmStorageImplementation.inMemory;
             },
           ),
         ),
       );
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  /// v1 -> v2 adds the two settings SPEC §8.6 lists and nothing stored: the
+  /// first day of the week and the long-run threshold.
+  ///
+  /// Written as explicit column additions rather than a table rebuild so that
+  /// an upgrade cannot lose a row, and covered by a migration test from a
+  /// committed v1 snapshot (SPEC §5.4, §12).
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(settingsRow, settingsRow.firstDayOfWeek);
+        await m.addColumn(settingsRow, settingsRow.longRunMinutes);
+      }
+    },
+    beforeOpen: (details) async {
+      // Foreign keys are off by default in SQLite, and time_entries.activity_id
+      // references activities(id) (SPEC §5.2).
+      await customStatement('PRAGMA foreign_keys = ON');
+    },
+  );
 }

@@ -36,6 +36,8 @@ class SettingsRepository {
           themeMode: Value(settings.themeMode.name),
           pixelsPerHour: Value(settings.pixelsPerHour),
           continueMinutes: Value(settings.continueWindow.inMinutes),
+          firstDayOfWeek: Value(settings.firstDayOfWeek),
+          longRunMinutes: Value(settings.longRun.inMinutes),
         ),
       );
 
@@ -53,6 +55,8 @@ class SettingsRepository {
         AppSettings.maxPixelsPerHour,
       ),
       continueWindow: Duration(minutes: row.continueMinutes),
+      firstDayOfWeek: row.firstDayOfWeek,
+      longRun: Duration(minutes: row.longRunMinutes),
     );
   }
 }

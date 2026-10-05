@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../domain/backup/json_backup.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/time_entry.dart';
 import '../db/database.dart';
@@ -75,6 +76,21 @@ class TimeEntryRepository {
         .entryStartingAfter(entryId, instant)
         .getSingleOrNull();
     return (previous: previous?.toDomain(), next: next?.toDomain());
+  }
+
+  /// Everything the database holds, tombstones included (SPEC §8.6).
+  ///
+  /// Deleted rows are part of a backup on purpose: without them a restore would
+  /// resurrect everything you ever deleted, and a merge would have no way to
+  /// know the deletion was the newer fact.
+  Future<({List<BackupActivity> activities, List<BackupEntry> entries})>
+  readForBackup() async {
+    final activities = await _db.select(_db.activities).get();
+    final entries = await _db.select(_db.timeEntries).get();
+    return (
+      activities: activities.map((row) => row.toBackup()).toList(),
+      entries: entries.map((row) => row.toBackup()).toList(),
+    );
   }
 
   Future<TimeEntry?> lastFinishedEntry() async {

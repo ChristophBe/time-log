@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Android adaptive foreground: the same mark without its ground (the
+       launcher paints that), held inside the 66% safe zone it may crop to. -->
+  <g transform="translate(512 512) scale(0.62) translate(-512 -512)">
+    <rect x="228" y="166" width="568" height="692" rx="172" fill="#FFFFFF" fill-opacity="0.26"/>
+    <rect x="304" y="252" width="110" height="520" rx="55" fill="#6D4AFF"/>
+  </g>
+</svg>

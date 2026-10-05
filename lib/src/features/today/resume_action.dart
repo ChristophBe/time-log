@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/adaptive.dart';
 import '../../core/clock.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../domain/models/app_settings.dart';
@@ -52,21 +53,26 @@ Future<void> resumeOrContinue(
 
 enum _ResumeChoice { continueEntry, startNew }
 
+/// Adaptive: a Material dialog, or a `CupertinoAlertDialog` on Apple platforms
+/// (SPEC §9.8). Continue is the default action either way (SPEC §6.4).
 Future<_ResumeChoice?> _askContinueOrNew(BuildContext context) =>
-    showDialog<_ResumeChoice>(
+    showAdaptiveDialog<_ResumeChoice>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AlertDialog.adaptive(
         title: const Text('Continue or start new?'),
         content: const Text(
           'This entry ended moments ago. Continuing extends it instead of '
           'creating a second entry next to it.',
         ),
         actions: <Widget>[
-          TextButton(
+          adaptiveAction(
+            context: context,
             onPressed: () => Navigator.of(context).pop(_ResumeChoice.startNew),
             child: const Text('Start new'),
           ),
-          FilledButton(
+          adaptiveAction(
+            context: context,
+            isDefault: true,
             onPressed: () =>
                 Navigator.of(context).pop(_ResumeChoice.continueEntry),
             child: const Text('Continue'),

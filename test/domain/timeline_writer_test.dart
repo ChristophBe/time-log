@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' show SqliteException;
+import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/timeline/invariants.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
 
@@ -398,6 +399,75 @@ void main() {
     });
   });
 
+  group('SPEC §8.4 notes', () {
+    test('a note is set, replaced and undone', () async {
+      final started = await h.writer.startByName(name: 'Writing specs');
+
+      await h.writer.setEntryNote(entryId: started.entryId, note: 'chapter 3');
+      expect((await h.byId(started.entryId)).note, 'chapter 3');
+
+      final undo = await h.writer.setEntryNote(
+        entryId: started.entryId,
+        note: 'chapter 4',
+      );
+      expect((await h.byId(started.entryId)).note, 'chapter 4');
+
+      await undo.undo();
+      expect((await h.byId(started.entryId)).note, 'chapter 3');
+    });
+
+    test('an empty or blank note is stored as null, not as ""', () async {
+      final started = await h.writer.startByName(
+        name: 'Writing specs',
+        note: 'something',
+      );
+
+      await h.writer.setEntryNote(entryId: started.entryId, note: '   ');
+
+      expect(
+        (await h.byId(started.entryId)).note,
+        isNull,
+        reason: '"has a note" must be one question, not two',
+      );
+    });
+
+    test('a note is trimmed', () async {
+      final started = await h.writer.startByName(name: 'Writing specs');
+
+      await h.writer.setEntryNote(
+        entryId: started.entryId,
+        note: '  chapter 3  ',
+      );
+
+      expect((await h.byId(started.entryId)).note, 'chapter 3');
+    });
+
+    test('a note over the limit is refused', () async {
+      final started = await h.writer.startByName(name: 'Writing specs');
+
+      await expectLater(
+        h.writer.setEntryNote(
+          entryId: started.entryId,
+          note: 'x' * (TimeEntry.maxNoteLength + 1),
+        ),
+        throwsArgumentError,
+      );
+      expect((await h.byId(started.entryId)).note, isNull);
+    });
+
+    test('a note leaves the times and the running slot alone', () async {
+      final started = await h.writer.startByName(name: 'Writing specs');
+      final before = await h.byId(started.entryId);
+
+      await h.writer.setEntryNote(entryId: started.entryId, note: 'chapter 3');
+
+      final after = await h.byId(started.entryId);
+      expect(after.startUtc, before.startUtc);
+      expect(after.endUtc, before.endUtc);
+      expect(after.isRunning, isTrue);
+    });
+  });
+
   group('SPEC §6.7 activities', () {
     test('renaming to an existing name merges and re-points history', () async {
       final a = await h.writer.startByName(name: 'Emails');
@@ -415,7 +485,67 @@ void main() {
       final activities = await h.db.select(h.db.activities).get();
       expect(activities, hasLength(1));
       final entries = await h.entries();
-      expect(entries.every((e) => e.activityId == merged.id), isTrue);
+      expect(entries.every((e) => e.activityId == merged.activity.id), isTrue);
+    });
+
+    test('a merge is undoable (SPEC §6.7)', () async {
+      // The least reversible thing in the app: it re-points every entry and
+      // drops an activity.
+      final a = await h.writer.startByName(name: 'E-mail');
+      h.clock.advance(const Duration(minutes: 30));
+      await h.writer.startByName(name: 'Email');
+      h.clock.advance(const Duration(minutes: 30));
+      await h.writer.stop();
+      final original = await h.byId(a.entryId);
+
+      final merged = await h.writer.renameActivity(
+        activityId: original.activityId,
+        name: 'Email',
+      );
+      await merged.undo.undo();
+
+      expect(await h.db.select(h.db.activities).get(), hasLength(2));
+      expect(
+        (await h.byId(a.entryId)).activityId,
+        original.activityId,
+        reason: 'the entry went back to the activity it came from',
+      );
+    });
+
+    test('a rename is undoable (SPEC §6.7)', () async {
+      final a = await h.writer.startByName(name: 'Writing spec');
+      final original = await h.byId(a.entryId);
+
+      final renamed = await h.writer.renameActivity(
+        activityId: original.activityId,
+        name: 'Writing specs',
+      );
+      expect(renamed.activity.name, 'Writing specs');
+
+      await renamed.undo.undo();
+      final back = await h.writer.renameActivity(
+        activityId: original.activityId,
+        name: 'Writing spec',
+      );
+      expect(back.activity.name, 'Writing spec');
+    });
+
+    test('a recolour is undoable (SPEC §6.7)', () async {
+      final a = await h.writer.startByName(name: 'Writing specs');
+      final entry = await h.byId(a.entryId);
+      final before = (await h.db.select(h.db.activities).get()).single;
+
+      final undo = await h.writer.setActivityColor(
+        activityId: entry.activityId,
+        colorSeed: 7,
+      );
+      expect((await h.db.select(h.db.activities).get()).single.colorSeed, 7);
+
+      await undo.undo();
+      expect(
+        (await h.db.select(h.db.activities).get()).single.colorSeed,
+        before.colorSeed,
+      );
     });
 
     test('the first twelve activities get distinct colours', () async {

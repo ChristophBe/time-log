@@ -15,7 +15,8 @@ Status: v1 specification. No code yet. Target: Android, iOS, macOS, Windows, Lin
 Make it effortless to answer "what did I actually do today?" with honest data, by making logging
 cheap enough that you keep doing it:
 
-- Starting an activity takes at most two taps from a cold launch.
+- The start input is on screen at all times, so starting is one tap or one line typed — there is
+  nothing to open first, from a cold launch or from anywhere else.
 - You never have to stop something before starting the next thing.
 - Mistakes are expected, so correcting a start or end time is a first-class action, not a hidden one.
 - The day is a calendar, because a timeline is how people already think about their day.
@@ -38,8 +39,11 @@ cheap enough that you keep doing it:
 2. **Nothing is destroyed silently.** Every mutation is undoable or soft-deleted.
 3. **Every gesture has a non-gesture equivalent.** Anything you can drag, you can also type and
    step with a keyboard or screen reader (§10).
-4. **Boring and conventional.** Material 3, standard navigation, standard sheets, standard undo.
-   Novel interaction is a cost, not a feature.
+4. **Boring and conventional — on whichever platform you are.** Standard navigation, standard
+   sheets, standard undo, and the host's own manners: Material on Android, Liquid Glass on Apple,
+   Fluent's density on Windows, GNOME's shapes on Linux. Novel interaction is a cost, not a feature,
+   and so is making a user learn a design system their device does not use. What does *not* adapt is
+   the identity — colour meaning, typeface, the mark, the day's own shapes (§9.8).
 
 ---
 
@@ -271,6 +275,13 @@ delete the empty activity). Both are undoable. Recolouring picks from the palett
 
 Soft delete with undo. Deleting an entry leaves a gap — neighbours are never stretched (invariant 7).
 
+### 6.9 Edit note
+
+Replaces one entry's note (≤ 2000 chars; empty or blank is stored as `null`, so "has a note" stays
+one question and clearing one survives an export round-trip). One transaction, one undo token. The
+only action here that does not re-check §4: a note touches no instant and no running slot, so there
+is nothing it can invalidate.
+
 ---
 
 ## 7. Boundary editing rules
@@ -334,57 +345,131 @@ the medium breakpoint (≥ 600 dp), extended rail on desktop (≥ 1240 dp). `go_
 
 The default screen, and the one optimised to death.
 
-- **Running card**, pinned at the top: activity name, note, start time, elapsed time (ticking at
-  1 s, `MM:SS` under an hour then `H:MM:SS`), and a **Stop** button. When nothing runs, the card
-  collapses to a single "Nothing is running" line plus **Resume *last activity***.
-- **Start** — a `FloatingActionButton.extended` labelled "Start", bottom-right, above the nav bar.
-  Opens §8.3. This plus one tap in the sheet is the two-tap target.
+Three zones, top to bottom: the **day header**, the **day**, the **start composer**. The two
+outer ones are chrome and share one container tone; the day between them keeps the plain surface.
+There is no app bar — a band whose only contents are a fixed title and one icon is chrome that
+tells you nothing, and the date is the real title of this screen.
+
+- **Day header**, two rows on one surface:
+  - the date (tap for the date picker), the day's tracked total beside it, then previous / next
+    day, **Today**, and **Settings** (§8.2);
+  - the **running band**: activity name, start time, note, elapsed time (ticking at 1 s, `MM:SS`
+    under an hour then `H:MM:SS`), and a **Stop** button. It carries the running activity's own
+    tint and its coloured edge — the same colour its block has on the calendar below. When nothing
+    runs it reads "Nothing is running" plus **Resume *last activity***; when the clock has jumped
+    it carries the §9.2 explanation. **All three states are the same height**, so the header does
+    not resize under your finger the instant you start or stop something. Past about 140 % text
+    scale the band stacks instead of ellipsizing every part of itself.
+- **Start composer**, docked to the bottom edge and on screen at all times (§8.3): a text field and
+  a **Start** button. There is no FAB and no sheet. The app has one primary verb, so the control
+  that performs it sits in the open rather than behind a button that opens a modal containing it,
+  and the bottom edge is reserved for it because it is the one control that has to be reachable with
+  a thumb at any moment.
 - **Body**: the day calendar for today (§8.2).
-- **Footer**: tracked total for the day, untracked total, and the top three activities by time.
+- **Day total**: the tracked total for the day, next to the date in the header (§8.2),
+  rather than a footer — the bottom edge belongs to the composer. It is the one number worth reading
+  at a glance; untracked time is already visible as gaps in the calendar, and per-activity totals are
+  a report (§8.6), not a thing to carry on the home screen. §10.4 already asked the day header to
+  announce the date and the total, so this also makes the screen agree with a rule the footer
+  arrangement was quietly failing.
 - **Long-run banner**: if the running entry exceeds the long-run threshold (default 8 h), a
   non-blocking banner — "Still tracking *X* after 8 h?" — with **Stop at…** (time picker) and
   **Keep going**. Never a modal, never a notification you cannot dismiss.
 
 ### 8.2 Day calendar view
 
-- Vertical axis, hour rules with labels, half-hour hairlines above 100 px/hour.
+- Vertical axis, hour rules with labels, half-hour hairlines above 100 px/hour. The rules are
+  painted, not laid out per hour: a row per tick centres its hairline inside its own text height,
+  which puts every gridline below the instant it claims to mark while the blocks beside it are
+  positioned exactly. Labels sit in the gutter, which the rules stop short of, and a vertical
+  hairline closes the gutter so the blocks read as placed against the axis.
 - **Zoom** 40–240 px/hour, default 72 (a 24-hour day scrolls). Pinch on touch, `Ctrl`/`Cmd`+scroll
-  on desktop, and explicit zoom buttons for anyone who cannot pinch.
-- **Now-line**: 2 px accent line with a time pill on the axis; the running block extends to it.
+  on desktop, and explicit zoom buttons for anyone who cannot pinch. The buttons float over the
+  top-right of the day rather than sitting in the header: zoom acts on what is underneath it, and
+  the header is for the day, not for the view of it. They are always on screen — they are the
+  non-gesture equivalent of pinching (§10.1), so they may not live behind a menu.
+- **Now-line**: 2 px line in the app's accent — not the error colour, because nothing is wrong at
+  15:04 — with a time pill on the axis and a dot where it leaves the gutter. The line is **centred on
+  the instant**: it lives at the vertical centre of the row carrying the pill, so that row is lifted
+  by half its own height rather than positioned by its top, which used to draw it some nine pixels
+  into the future.
+- **The running entry is drawn unfinished.** Its bottom edge meets the now-line exactly and its
+  bottom corners are square — a rounded cap a pixel clear of the line says the entry ended there.
+  It is also the one block pinned by its *bottom*: an entry started a minute ago is still drawn at
+  the 18 px minimum, but that minimum is spent upwards, because spending it downwards would paint
+  time that has not happened yet. The same treatment covers an edge clipped by midnight: a cut edge
+  is not a cap.
   Updates every 30 s, and on app resume. Static (no pulse) when animations are disabled.
-- **Blocks**: activity colour, name, time range and duration as text. Minimum rendered height 18 px
-  so short entries stay visible and hittable; labels drop out progressively (duration first, then
-  name) and the full text stays in the semantics label and the sheet. Where several sub-snap entries
+- **Blocks**: the activity's fill, its coloured edge as a spine down the left, name, time range and
+  duration as text. The spine does the work a border used to: two touching blocks of similar hue
+  stay told apart by their edges rather than by an outline drawn round everything. Minimum rendered
+  height 18 px so short entries stay visible and hittable; labels drop out progressively (duration
+  first, then name) when the block is shorter than the lines themselves need **at the reader's text
+  scale**, and the full text stays in the semantics label and the sheet. A selected or focused block
+  shows grab pucks on its edges; they are decoration, and the drag targets remain the whole top and
+  bottom halves. Where several sub-snap entries
   would collide visually, they render as one "*n* short entries" chip that expands on tap or zoom.
-- **Gaps**: untracked ranges over 5 minutes are shown as a hatched area labelled with their length,
-  tappable to create an entry filling exactly that gap.
-- **Day navigation**: horizontal swipe, `←`/`→`, a date header that opens a date picker, and a
-  **Today** action that is only enabled when you are not on today.
+- **Gaps**: untracked ranges over 5 minutes are shown as a shallow recess under a sparse hatch,
+  labelled with their length, tappable to create an entry filling exactly that gap. Quiet on
+  purpose: a hatch at the weight of the hour rules makes every gap the loudest thing on the day.
+- **Day navigation**, in the header's first row (§8.1): horizontal swipe, `←`/`→`, the date itself
+  opens a date picker, a **Today** action that is only enabled when you are not on today, and the
+  day's tracked total beside the date.
 - On first open the view scrolls to show the now-line, or the day's first entry for past days.
-- Empty state: "No entries for this day" plus **Start** / **Add entry**.
+- Empty state: "No entries for this day", pointing at the composer — which is already on screen, so
+  it needs no button of its own — plus **Add entry**.
 
-### 8.3 Start sheet
+### 8.3 Start composer
 
-A bottom sheet (dialog on desktop) that is keyboard-first:
+Not a sheet: a composer docked to the bottom of Today, always visible — a text field plus a filled
+**Start** button. A modal was the first design. It cost a tap, hid the day behind it, made "start
+something" a mode, and — worst — its keyboard-up-on-open covered the very suggestion list the
+two-tap path depended on. A permanent input costs nothing when it is ignored.
 
-- Text field with focus and keyboard up on open. Enter starts; Escape cancels.
-- **Suggestions** below the field: recent/frequent activities (§9.6), as a vertical list of rows
-  (name, colour, "last: 2 h ago"), filtered as you type. Arrow keys move, Enter picks.
-- An explicit consequence line when something is running: "Stops **Writing specs** at 14:32." This
-  is the only warning; there is no confirmation dialog, because Undo covers it.
-- Optional note field, collapsed behind "Add note".
-- If the typed name is new: "Create **Deep work**" as the first row, so creation is never a mode.
+- **At rest**: the field and the button, nothing else; the day keeps the screen. Nothing is focused
+  on launch, because reviewing the day is the other half of the core loop (§2) and a soft keyboard
+  covering the calendar on every launch is the wrong default. One tap on the field to type.
+- **In use** (focused, or non-empty): the ranked **suggestions** (§9.6) expand *upward* over the
+  calendar, filtered as you type, as a vertical list of rows (the activity's coloured dot, its
+  name, "2 h ago"). The day behind dims under a scrim, which is not tappable — a tap-to-dismiss
+  scrim is an unlabelled tap target (§10.4) and `Escape` already hands the screen back. One tap on a
+  row starts it. Arrow keys move, Enter picks. It is drawn *over the calendar*, not above
+  the field, so opening it costs calendar height and nothing else — stacking it on the field would
+  grow the bottom bar and squeeze the running card and day header off the screen at large text
+  scales (§10.2).
+- Rank order runs top-down even though the panel opens upward, so `↓` always means "next best".
+  Nearest-first was the alternative and was rejected for inverting that.
+- An explicit consequence line when something is running: "Stops **Writing specs** at 14:32." It
+  sits at the bottom of the panel, directly above the field, so the cause is next to the effect.
+  This is the only warning; there is no confirmation dialog, because Undo covers it.
+- **No note field.** A note is what distinguishes two spans of the same activity (§5.1), which is a
+  judgement made after the fact and not at the instant you start. It is edited on the entry it
+  belongs to (§8.4). Start takes a name and nothing else.
+- No "Create **Deep work**" row either: pressing **Start** on a name that matches nothing creates
+  it, so creation is still never a mode. The row was a modal-era affordance for a sheet that had no
+  button of its own.
+- Keyboard: Enter starts the highlighted row, or what is typed. `Escape` clears the field and hands
+  focus back to the day. `Cmd/Ctrl+N` focuses the field. The composer swallows the day-view keys
+  (`T`, `←`, `→`) while it has focus, so typing a "t" does not jump to today and the arrows move the
+  caret instead of the day — and gives them straight back when it lets go.
 
 ### 8.4 Entry sheet (detail / edit)
 
 Opened by tapping any block or history row. Contents, in order:
 
-1. Activity name (tap to change or rename), colour swatch, note (inline-editable).
-2. **Start**, **End**, **Duration** — three fields that stay consistent: editing any two updates the
+1. Activity name (tap to change or rename) behind the activity's coloured spine — the same one its
+   block carries, so the sheet is visibly about *that* block — and the note (inline-editable,
+   ≤ 2000 chars).
+   The note commits when the field lets go rather than through **Save**, so one note change is one
+   undo step (§7.5) and is never bundled with a time change. Enter inserts a line; a note is prose.
+2. **Start**, **End**, **Duration** — one group with hairlines between the rows, not three loose
+   rows, because they are three views of the same two instants: editing any two updates the
    third (editing duration moves `endAt`, or `startAt` for a boundary pinned by §7). Each has a
    time-picker affordance **and** `−`/`+` stepper buttons of one snap interval.
 3. Conflict text inline when a typed value breaks a clamp (§7.2).
-4. Actions: **Resume** (or **Continue**, §6.4) · **Split here…** · **Delete**.
+4. Actions, weighted: **Resume** (or **Continue**, §6.4) and **Split here…** as secondary buttons,
+   **Delete** demoted and in the error colour, and **Save** as the one filled button, full width at
+   the thumb end of the sheet.
 5. For the running entry: **Stop** replaces the End field, which reads "running".
 
 ### 8.5 History
@@ -397,12 +482,34 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
 
 - Snap interval · 12/24-hour · first day of week · theme (system/light/dark) · default zoom.
 - Continue window (§6.4) · long-run threshold.
-- **Export**: JSON (full fidelity: `schemaVersion`, activities, entries, settings) and CSV
-  (`id, activity, note, start_local, end_local, start_utc, end_utc, duration_minutes, tz`). Shared
-  via the platform share sheet / save dialog; downloaded on web.
-- **Import**: JSON only. Merge by `id`, newest `updatedAt` wins; shows a dry-run summary (added /
-  updated / skipped / rejected) before applying, and rejects any file that would break §4, naming
-  the first offending pair.
+- **Export a date range** (built): a CSV of the entries between two dates, for a spreadsheet or an
+  invoice. Columns `id, activity, note, start_local, end_local, start_utc, end_utc,
+  duration_minutes, tz`. Presets — this week, last week, this month, last month — plus a custom
+  range, and a count and total shown before you commit. Shared via the platform share sheet / save
+  dialog; downloaded on web.
+
+  Three rules make the file trustworthy, and each has a test:
+  - **Rows are clipped to the range.** An entry that began the evening before is reported starting
+    at the range, so `duration_minutes` sums to *exactly* the time tracked in the range and agrees
+    with the day totals of §5.3. One entry can therefore appear in two adjacent exports as two
+    slices, sharing an `id`.
+  - **A running entry is included with empty end columns**, its duration measured to the moment of
+    export. Leaving it out would take hours off the total with nothing to explain the gap; filling
+    in an end would record a moment that never happened.
+  - **The file is written for machines**: `*_utc` in ISO 8601, `*_local` as `YYYY-MM-DD HH:MM`,
+    RFC 4180 quoting, CRLF, and a UTF-8 BOM so Excel reads a non-ASCII activity name correctly.
+    None of it follows the 12/24-hour display setting.
+
+- **Export everything** (P4): JSON at full fidelity — `schemaVersion`, activities, entries,
+  settings — which is the backup half of this and a different job from the extract above: it has to
+  round-trip through import (§14.10), so it cannot be a slice.
+- **Import** (built): JSON only. Merge by `id`, newest `updatedAt` wins; shows a dry-run summary
+  (added / updated / skipped / rejected) before applying, and rejects any file that would break §4,
+  naming the first offending pair. Two details worth stating because they are where this goes wrong:
+  the §4 check runs over the **merged** timeline rather than over the incoming file alone — a file
+  that is consistent with itself can still overlap what is already here — and the whole import is
+  one transaction, so a rejected file changes nothing (§4.6). Tombstones are carried in the file and
+  restored, or a round trip would resurrect everything ever deleted.
 - **Delete all data**, with typed confirmation.
 - About: version, licences, link to this spec.
 
@@ -443,7 +550,9 @@ pass is needed (§9.1).
 - DB fails to open: full-screen explanation with **Retry** and **Export diagnostics**; never a
   silent empty timeline, which would read as data loss.
 - Web without persistent storage (private browsing, no OPFS): a dismissible banner — "Storage here
-  is temporary. Export to keep your data." — shown on first launch and in Settings.
+  is temporary. Export to keep your data." — shown on first launch. The signal is drift's chosen
+  implementation being in-memory; anything that persists, even IndexedDB, is not warned about,
+  because it is not a lie.
 - Import of a file from a newer `schemaVersion`: refused with a clear message, never partially applied.
 
 ### 9.6 Suggestion ranking
@@ -461,9 +570,121 @@ currently running activity is excluded. With no history, the list is empty and t
 
 ### 9.7 Colour
 
-A 12-colour palette, each entry tested for ≥ 4.5:1 contrast against its own on-colour in both light
-and dark theme. New activities take the least-used slot. Colour is always accompanied by the name in
-text — it is never the only way to tell two blocks apart (§10.3).
+A 12-colour palette. Each slot is four colours — `fill`, `onFill`, `edge`, `tint` — built by solving
+for a **target relative luminance** rather than by picking a lightness, because luminance is what
+contrast is computed from. That makes the guarantees structural rather than something to re-check
+whenever a hue is added: `fill`/`onFill` clears 4.5:1 and `fill`/`edge` clears 3:1 for *any* hue, in
+both themes, and tests assert both for all twelve.
+
+The hues are spread rather than evenly stepped — an even 30° walk spends four of the twelve slots on
+reds and pinks, the hardest pairs to tell apart — and they are *ordered* so consecutive slots are far
+apart, because new activities take the least-used slot and slots 0 and 1 are the two colours a new
+user sees side by side. Slot 0 is a calm blue: on a running band a red reads as an alarm.
+Neighbouring slots also alternate between two luminance tiers, so two activities created one after
+the other stay distinct in grayscale and under a deuteranopia simulation, where the hue step gives
+nothing.
+
+**The arc 215°–277° is reserved.** The live accent (§9.8) sits in it, so no activity may. This is
+what makes "a vivid indigo on screen means *now*" true rather than usually true, and it is asserted
+in `palette_test.dart` alongside the ordering. It costs something worth naming: the blues stop at
+214° and resume at 278°, so the palette carries one blue instead of three.
+
+Colour is always accompanied by the name in text — it is never the only way to tell two blocks
+apart (§10.3).
+
+### 9.8 Design system and identity
+
+The app is Material 3 with one set of decisions, held in `app/design.dart` (the scale and the two
+voices), `app/theme.dart` (colour and every component theme) and `app/palette.dart` (activity
+colour). A widget that needs a colour, a radius or a text style asks for one; it does not invent one.
+
+**Identity.** Four rules, and the rest follows from them.
+
+1. **Two voices.** Words are set in **Geist Sans**, every number in **Geist Mono** — the hour axis,
+   the times on a block, durations, totals, the age beside a suggestion, the ticking readout. One
+   designed superfamily, so the two voices are relatives. Both are vendored under `assets/fonts/`
+   (SIL OFL): this app works offline and must look the same everywhere, and a font fetched at
+   runtime does neither. `AppType.numeric` is how a call site says "this is a number".
+2. **Colour means one of four things, and nothing else gets any.**
+
+   | Colour | Means |
+   | --- | --- |
+   | One of the twelve activity hues (§9.7) | *this activity* — its block, spine, dot, running band |
+   | The live accent | *now* — the now-line, the running state, the focus ring |
+   | The error colour | *this is wrong* — a conflict, a clock jump, a database failure |
+   | None | everything else: all chrome, all surfaces, all icons, all buttons |
+
+3. **The accent is reserved** (§9.7). Its hue arc is struck from the activity palette, so it can
+   never be mistaken for something a user named.
+4. **Primary actions are ink** — near-black on light, near-white on dark. Start, Stop and Save are
+   the loudest controls on the screen and deliberately colourless, which is what keeps the accent
+   rare enough to mean anything. `theme_test.dart` asserts that `primary` carries no chroma.
+
+**Minimal here means fewer things, not fewer affordances.** Nothing that is reachable becomes less
+reachable to make the screen quieter; §10 is not negotiable against §9.8.
+
+The mechanics:
+
+- **Spacing** 4 / 8 / 12 / 16 / 24 / 32; **radii** 10 (blocks, fields) / 14 (grouped containers) /
+  24 (sheets and the panel), with **buttons as pills** because a button is the one thing that should
+  look pressable; **strokes** 1 hairline, 4 activity spine, 2 focus and now-line.
+- **One surface, divided by hairlines.** The header, the day and the composer are the same tone;
+  only things that sit *on* that surface (the running band, the total, a stepper's value, the
+  suggestion panel) take a container tone. No elevation separates anything that is not floating.
+- **One format for an amount of time, and a colon means a clock time.** A duration always carries
+  its units — `0 min`, `45 min`, `1 h`, `1 h 05 min`, `12 h 30 min` — with the minutes padded after
+  an hour so a column of them lines up in the mono, and dropped entirely on a whole hour. Two
+  exceptions, both deliberate: the ticking readout is a stopwatch (`1:12:00`, §8.1) because it is a
+  running counter rather than a measurement, and screen-reader text is spoken English
+  (`1 hour 12 minutes`, §10.4) because it is read aloud. `test/core/formatters_test.dart` asserts the
+  rule itself — that no duration string can contain a colon — not just its examples.
+- **Icons**: the rounded set for strokes and arrows, the outline set for objects. Never both for the
+  same glyph.
+- **Roles the Material scheme has no word for** (live, axis rules, gutter spine, gap ink and hatch,
+  scrim) are named in an `AppColors` theme extension, so nothing has to borrow `colorScheme.error`
+  to mean "now".
+- **Motion** is 90 ms for a state change on something already on screen and 120 ms for something
+  arriving, through `Motion.of`, which returns zero when the platform asks for no animation (§10.2).
+- **Thresholds that decide whether text fits are measured at the reader's text scale**, never
+  written as pixel constants (§10.2).
+
+**The mark** (`tool/brand/mark.svg`) is the same block: a span of the day with its live edge, on ink.
+Not a clock — there is no clock face anywhere in this app. It is hand-written SVG, rasterised by
+headless Chrome and fanned out to every platform by `flutter_launcher_icons`, so one file is the
+source of all of them; `tool/brand/README.md` has the two commands.
+
+### What adapts, and what does not
+
+The app is a guest on six platforms. Its *manners* are the host's; its *identity* is its own.
+
+| Invariant everywhere | Adapts per platform |
+| --- | --- |
+| The four colour meanings and the reserved accent (§9.7) | Corner radii, control height, density |
+| Geist Sans / Geist Mono and the two-voice rule | Button shape: pill, capsule or cornered |
+| The mark | Switches, segmented controls, dialogs, sheets, scrollbars |
+| The calendar: axis, blocks, spine, gaps, now-line | Time and date pickers |
+| Every §10 guarantee | Page transitions, back gesture, menu bar, window chrome |
+
+`app/platform_style.dart` holds the numbers; `app/adaptive.dart` holds the controls that genuinely
+differ. Where Flutter has an `.adaptive` constructor that is what is used. The split from
+`design.dart` is deliberate: that file is the identity scale and does not vary.
+
+**Apple: Liquid Glass.** Chrome is a translucent, blurred material that floats *over* the day rather
+than sitting beside it — the header, the composer, the suggestion panel, the sheet and the zoom
+control — with capsule controls and markedly rounder containers. Implemented in `app/glass.dart`,
+which draws a tint, a backdrop blur and a single specular hairline on the lit edge, plus a soft
+shadow so a floating surface reads as floating. Flutter cannot refract, so this is a likeness, not a
+reproduction. **It degrades to opaque** under `MediaQuery.highContrast` — Flutter does not expose
+Reduce Transparency, and that is the nearest honest signal — and text contrast is measured against
+the opaque tint, so §10.3 holds in both states.
+
+Because the header floats, the day owns the full height and takes a top inset from it. That inset is
+measured rather than written down: it moves with the text scale, with the running activity's name
+and with the safe area.
+
+**Keyboard.** §10.5's "Cmd/Ctrl" is one shortcut with two names, not two shortcuts: the command key
+is Cmd on Apple and Ctrl elsewhere, never both. On macOS the same callbacks are also a real menu bar
+(app, Track, View), so a menu can never drift from its shortcut.
 
 ---
 
@@ -507,13 +728,16 @@ feature that fails them is not done.
   boundary change ("*Email* now ends at 15:05").
 - **The ticking elapsed counter is not a live region.** It is labelled coarsely (`"running, 1 hour
   12 minutes"`) and read on demand; a per-second live region would make the screen unusable.
-- Day view is traversable in chronological order; the day header announces the date and totals.
+- Day view is traversable in chronological order; the day header announces the date and the tracked
+  total.
 - Reading order and focus order match visual order; sheets trap focus and return it on dismiss.
 
 ### 10.5 Keyboard
 
-Global: `Cmd/Ctrl+N` start · `Cmd/Ctrl+.` stop · `Cmd/Ctrl+R` resume last · `Cmd/Ctrl+F` search ·
-`T` today · `←`/`→` previous/next day · `?` shortcut sheet.
+Global: `Cmd/Ctrl+N` focus the start field · `Cmd/Ctrl+.` stop · `Cmd/Ctrl+R` resume last ·
+`Cmd/Ctrl+F` search · `T` today · `←`/`→` previous/next day · `?` shortcut sheet. The bare-key
+bindings (`T`, `←`, `→`) belong to the start field while it has focus, so it can be typed in; it
+returns them when it lets go (§8.3).
 
 With a block focused: `Enter` open sheet · `Space` resume · `Delete` delete ·
 `Shift+↑`/`Shift+↓` move the **end** by one snap · `Alt+↑`/`Alt+↓` move the **start** by one snap ·
@@ -534,7 +758,7 @@ TalkBack, VoiceOver, keyboard-only desktop pass, and a 200 %-scale pass. Recorde
 | Concern | Choice | Version |
 | --- | --- | --- |
 | SDK | Flutter / Dart | 3.47 / 3.13 |
-| UI | Material 3, `ThemeData.useMaterial3` | — |
+| UI | Material 3, with a per-platform style layer and Cupertino controls where a design system genuinely differs (§9.8) | — |
 | State | `flutter_riverpod` + `riverpod_annotation` / `riverpod_generator` | ^3.4.3 / ^4.0.7 / ^4.0.9 |
 | Persistence | `drift` + `drift_flutter` (SQLite; `WasmDatabase` + OPFS on web) | ^2.35.1 / ^0.3.1 |
 | Routing | `go_router` | ^18.0.2 |
@@ -622,10 +846,14 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 **Unit — suggestions (§9.6).** `recentBeatsFrequentWithinHalfLife` · `prefixMatchOutranksSubstring` ·
 `runningActivityIsExcluded`.
 
-**Widget.** Running card states (idle / running / future-start) · calendar geometry (block position
-and height for a given zoom, short-entry minimum, gap rendering) · start sheet keyboard flow ·
+**Widget.** Running band states (idle / running / future-start) · calendar geometry (block position
+and height for a given zoom, short-entry minimum, gap rendering) · start composer keyboard flow ·
 entry-sheet three-field consistency · semantics labels and actions on blocks, gaps and steppers ·
 golden tests at 1.0× and 2.0× text scale in light and dark.
+
+The goldens are the only tests that protect the *look*: everything else asserts behaviour and would
+stay green through a redesign. They render in the test font rather than Roboto, which is what keeps
+them machine-independent — read them for layout, weight and colour, which is what drifts.
 
 **Integration (`integration_test`).** The core loop on a real DB: start A → start B → verify
 handover instant → resume A → correct a boundary by drag → undo → kill and relaunch the app →
@@ -650,7 +878,7 @@ integration suite on one mobile and one desktop target.
 | **P1 Core tracking** | `TimelineWriter` start/stop/resume/continue, running card, Start sheet with suggestions, persistence across relaunch. | Start → switch → resume works end-to-end; §4 and §6 tests green; running entry survives app kill. |
 | **P2 Day calendar** | Day view, axis, zoom, now-line, blocks, gaps, midnight splitting, day navigation, day totals. | Calendar geometry and day/zone tests green; a day of real use reads correctly, including across a DST change. |
 | **P3 Editing** | Drag handles, the §7 rules, entry sheet with typed fields and steppers, split, delete, undo — each landing with its keyboard and screen-reader equivalent. | §7 tests green; a boundary can be corrected by drag, by typing, and by keyboard alone with identical results. |
-| **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | Export → wipe → import round-trips; §10.6 manual passes done. |
+| **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | **Built.** Export → wipe → import round-trips, asserted in `backup_round_trip_test.dart`. §10.6's manual passes (TalkBack, VoiceOver, keyboard-only, 200 %) are still outstanding, as is the `integration_test` run, which needs a device. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, projects/tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
@@ -661,7 +889,9 @@ surface, and the spec updated if the phase taught us something.
 
 ## 14. Acceptance criteria for v1
 
-1. From a cold launch, starting a new activity takes **two taps** (FAB → suggestion row).
+1. The start input is on screen at all times, so **nothing has to be opened** before starting —
+   from a cold launch or from any other state. From there, starting is one tap on a suggestion row,
+   or a typed name plus **Start**/Enter. Verified by test.
 2. Starting an activity while another runs leaves **no gap and no overlap**, verified by test.
 3. At most one entry runs at a time, enforced by a UNIQUE index and verified by test.
 4. A running entry survives app kill, OS kill and reboot with the correct elapsed time, and needs no
@@ -690,7 +920,7 @@ The original request, mapped to where it is specified:
 | --- | --- |
 | Flutter app to track what I am doing | §1, §11.1 |
 | Daily calendar view showing the logs | §8.1, §8.2, §5.3 |
-| Really easy to use | §1 principles, §2, §8.1 (two-tap start), §9.4 |
+| Really easy to use | §1 principles, §2, §8.1 and §8.3 (a start input always on screen), §9.4 |
 | Accessible | §10 in full, §14.9 |
 | Common UX patterns | §8 (M3, bottom nav/rail, sheets, FAB, SnackBar undo), §7.1 (calendar-standard boundaries) |
 | Starting an action stops the current one | §4.1, §4.4, §6.1 |
@@ -709,4 +939,9 @@ The original request, mapped to where it is specified:
    right in P4 and change the default.
 3. **Notes vs. activity names** — if notes end up carrying the real distinctions, that is the signal
    that tags (P6) are actually needed.
-4. **App name and bundle identifier** — needed before P5 (store-facing). Currently `time_log`.
+4. **Bundle identifier** — still needed before P5 (store-facing). The *name* is settled: **time-log**,
+   carried by the manifest, the page title and the mark (§9.8). The Dart package stays `time_log`,
+   because that is an identifier and not a name.
+5. **Day total vs. the old footer** — the home screen now carries only the tracked total. If
+   untracked time or the per-activity split turns out to be wanted at a glance, the day header is
+   where it goes back; revisit in P4 alongside reports.
