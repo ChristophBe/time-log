@@ -8,7 +8,9 @@ import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/timeline/timeline_math.dart';
+import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
+import 'package:time_log/src/features/entry/activity_picker.dart';
 import 'package:time_log/src/features/entry/entry_providers.dart';
 import 'package:time_log/src/features/entry/entry_sheet.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
@@ -574,6 +576,185 @@ void main() {
         textScaler: const TextScaler.linear(2),
       );
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  /// Relabelling one span, which is a different action from renaming the
+  /// activity (SPEC §6.7) even though both start from the same tap.
+  group('activity picker (SPEC §6.10)', () {
+    Future<WidgetHarness> pumpPicker(
+      WidgetTester tester, {
+      TimeEntry? target,
+    }) async {
+      final h = WidgetHarness(
+        now: now,
+        activities: activities,
+        entries: <TimeEntry>[target ?? entry],
+        suggestions: <ActivitySuggestion>[
+          suggestionFor(
+            activity: email,
+            lastUsed: now.subtract(const Duration(hours: 2)),
+          ),
+        ],
+      );
+      when(
+        () => h.writer.setEntryActivity(
+          entryId: any(named: 'entryId'),
+          name: any(named: 'name'),
+        ),
+      ).thenAnswer(
+        (invocation) async =>
+            (activity: email, undo: UndoToken('x', () async {})),
+      );
+      when(
+        () => h.writer.setEntryNote(
+          entryId: any(named: 'entryId'),
+          note: any(named: 'note'),
+        ),
+      ).thenAnswer((_) async => UndoToken('x', () async {}));
+      await h.pump(
+        tester,
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showEntrySheet(context, target ?? entry),
+              child: const Text('open sheet'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open sheet'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Writing specs'));
+      await tester.pumpAndSettle();
+      return h;
+    }
+
+    testWidgets('the activity name opens the picker, not the renamer', (
+      tester,
+    ) async {
+      await pumpPicker(tester);
+
+      expect(find.byType(ActivityPicker), findsOneWidget);
+      expect(
+        find.text('This entry only — currently Writing specs.'),
+        findsOneWidget,
+        reason: 'SPEC §6.10: the two edits have to be told apart',
+      );
+      // The §6.7 route is still here, one step further in and labelled.
+      expect(find.byKey(const Key('activity-picker-rename')), findsOneWidget);
+    });
+
+    testWidgets('the entry\'s own activity is not offered', (tester) async {
+      await pumpPicker(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('picker-suggestion-a2')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('picker-suggestion-a1')),
+        findsNothing,
+        reason: 'SPEC §9.6: picking it would be a no-op',
+      );
+    });
+
+    testWidgets(
+      'picking a suggestion relabels the entry and closes the sheet',
+      (tester) async {
+        final h = await pumpPicker(tester);
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('picker-suggestion-a2')),
+        );
+        await tester.pumpAndSettle();
+
+        verify(() => h.writer.setEntryActivity(entryId: 'e1', name: 'Email'))
+            .called(1);
+        expect(find.text('Changed to Email'), findsOneWidget);
+        expect(find.text('Undo'), findsOneWidget);
+        expect(
+          find.byType(EntrySheet),
+          findsNothing,
+          reason: 'the sheet was built from an entry that has moved',
+        );
+      },
+    );
+
+    testWidgets('a typed name that matches nothing creates it', (tester) async {
+      final h = await pumpPicker(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('activity-picker-name')),
+        'Reading',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activity-picker-commit')));
+      await tester.pumpAndSettle();
+
+      verify(() => h.writer.setEntryActivity(entryId: 'e1', name: 'Reading'))
+          .called(1);
+    });
+
+    testWidgets('a blank name cannot be committed', (tester) async {
+      await pumpPicker(tester);
+
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('activity-picker-commit')),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('arrow down then Enter picks the first suggestion', (
+      tester,
+    ) async {
+      final h = await pumpPicker(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      verify(() => h.writer.setEntryActivity(entryId: 'e1', name: 'Email'))
+          .called(1);
+    });
+
+    testWidgets('relabelling the running entry is offered', (tester) async {
+      final running = entryFor(
+        id: 'r1',
+        activityId: specs.id,
+        start: DateTime.utc(2026, 3, 10, 13),
+      );
+      final h = await pumpPicker(tester, target: running);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('picker-suggestion-a2')),
+      );
+      await tester.pumpAndSettle();
+
+      verify(() => h.writer.setEntryActivity(entryId: 'r1', name: 'Email'))
+          .called(1);
+    });
+
+    testWidgets('the name carries a hint naming both edits (SPEC §10.4)', (
+      tester,
+    ) async {
+      final h = WidgetHarness(
+        now: now,
+        activities: activities,
+        entries: <TimeEntry>[entry],
+      );
+      await h.pump(tester, Scaffold(body: EntrySheet(entry: entry)));
+
+      final hints = tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .map((widget) => widget.properties.hint)
+          .whereType<String>();
+      expect(hints, contains('Double tap to change, rename or recolour'));
     });
   });
 }

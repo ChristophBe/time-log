@@ -17,7 +17,12 @@ import 'today_providers.dart';
 /// A banner, never a modal and never a notification you cannot dismiss: the
 /// app has no idea whether you forgot to stop or genuinely worked all day, and
 /// only one of those is a mistake. Dismissing it is **Keep going**, and it
-/// stays dismissed for that entry rather than coming back a minute later.
+/// stays dismissed for that run rather than coming back a minute later.
+///
+/// Measured over the whole run via [runStartUtcProvider], not over the current
+/// entry: SPEC §6.11 cuts the running entry at midnight, so an overnight clock
+/// -- the one case this banner exists for -- would otherwise be the one case it
+/// never asked about.
 class LongRunBanner extends ConsumerStatefulWidget {
   const LongRunBanner({super.key});
 
@@ -26,7 +31,9 @@ class LongRunBanner extends ConsumerStatefulWidget {
 }
 
 class _LongRunBannerState extends ConsumerState<LongRunBanner> {
-  String? _dismissedEntryId;
+  /// Keyed on when the run began rather than on the entry id, so the midnight
+  /// cut handing us a new entry does not un-dismiss the banner (SPEC §6.11).
+  DateTime? _dismissedRunStart;
 
   Future<void> _stopAt(DateTime startUtc, String entryId, bool use24h) async {
     final now = ref.read(appClockProvider).nowUtc();
@@ -68,8 +75,16 @@ class _LongRunBannerState extends ConsumerState<LongRunBanner> {
     final now =
         ref.watch(coarseTickerProvider).value ??
         ref.watch(appClockProvider).nowUtc();
-    final elapsed = running.durationAt(now);
-    if (elapsed < settings.longRun || _dismissedEntryId == running.id) {
+    // Nothing at all until the run's real start is known, rather than falling
+    // back to this entry's own start for a frame: a question that waits one
+    // frame costs nothing, whereas asking it on a guess means **Keep going**
+    // can record the guess and let the banner back in a frame later.
+    final runStart = ref.watch(runStartUtcProvider).value;
+    if (runStart == null) return const SizedBox.shrink();
+
+    final elapsed = now.difference(runStart);
+    final dismissed = _dismissedRunStart?.isAtSameMomentAs(runStart) ?? false;
+    if (elapsed < settings.longRun || dismissed) {
       return const SizedBox.shrink();
     }
 
@@ -106,7 +121,7 @@ class _LongRunBannerState extends ConsumerState<LongRunBanner> {
               ),
               const SizedBox(width: Insets.sm),
               TextButton(
-                onPressed: () => setState(() => _dismissedEntryId = running.id),
+                onPressed: () => setState(() => _dismissedRunStart = runStart),
                 child: const Text('Keep going'),
               ),
             ],

@@ -67,12 +67,16 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+    // The activity name opens the picker now (SPEC §6.10); renaming for all of
+    // history is one step further in, where it says so.
     await tester.tap(find.text('Writing specs'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('activity-picker-rename')));
     await tester.pumpAndSettle();
     return h;
   }
 
-  testWidgets('the activity name opens the editor', (tester) async {
+  testWidgets('the picker\'s rename row opens the editor', (tester) async {
     await pumpEditor(tester);
 
     expect(find.byType(ActivityEditor), findsOneWidget);

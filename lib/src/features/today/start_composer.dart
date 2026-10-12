@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/design.dart';
 import '../../app/glass.dart';
-import '../../app/palette.dart';
 import '../../app/platform_style.dart';
 import '../../app/theme.dart';
 import '../../core/clock.dart';
@@ -13,6 +12,7 @@ import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
+import '../entry/activity_suggestion_row.dart';
 import 'start_action.dart';
 import 'today_providers.dart';
 
@@ -365,7 +365,7 @@ class StartSuggestionPanel extends ConsumerWidget {
                                 ValueListenableBuilder<int>(
                                   valueListenable: state.highlighted,
                                   builder: (context, highlighted, _) =>
-                                      _SuggestionRow(
+                                      ActivitySuggestionRow(
                                         suggestion: suggestions[index],
                                         highlighted: index == highlighted,
                                         now: now,
@@ -438,75 +438,6 @@ class _ConsequenceLine extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SuggestionRow extends StatelessWidget {
-  const _SuggestionRow({
-    required this.suggestion,
-    required this.highlighted,
-    required this.now,
-    required this.onTap,
-  });
-
-  final ActivitySuggestion suggestion;
-  final bool highlighted;
-  final DateTime now;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final colors = ActivityPalette.forSeed(
-      suggestion.activity.colorSeed,
-      Theme.of(context).brightness,
-    );
-    final last = suggestion.lastUsed;
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 48),
-        // Highlight by surface, not by recolouring the name: the row's colour
-        // belongs to its activity, and tinting the text would make two things
-        // compete to say which row Enter would take.
-        color: highlighted ? scheme.secondaryContainer : null,
-        padding: const EdgeInsets.symmetric(
-          horizontal: Insets.lg,
-          vertical: Insets.sm,
-        ),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: Metrics.colorDot,
-              height: Metrics.colorDot,
-              decoration: BoxDecoration(
-                color: colors.edge,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: Insets.md),
-            Expanded(
-              child: Text(
-                suggestion.activity.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
-            if (last != null) ...<Widget>[
-              const SizedBox(width: Insets.sm),
-              Text(
-                '${formatAge(now.difference(last))} ago',
-                maxLines: 1,
-                style: AppType.numeric(Theme.of(context).textTheme.labelSmall)
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }

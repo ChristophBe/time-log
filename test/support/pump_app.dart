@@ -42,6 +42,8 @@ class WidgetHarness {
     this.suggestions = const <ActivitySuggestion>[],
     this.lastFinished,
     this.dayWindows,
+    this.runStart,
+    this.runningStream,
     this.neighbours = (previous: null, next: null),
   }) : clock = FakeClock(now ?? DateTime.utc(2026, 3, 10, 14, 32));
 
@@ -57,6 +59,17 @@ class WidgetHarness {
   /// time zone of the machine running the tests.
   final DayWindowCalculator? dayWindows;
 
+  /// A running entry that *changes* while the tree stays mounted, for the one
+  /// thing a value stream cannot express: SPEC §6.11 cutting the entry at
+  /// midnight under a screen that is already on display. Replaces [running] as
+  /// the source of `runningEntryProvider` when it is given.
+  final Stream<TimeEntry?>? runningStream;
+
+  /// When the running entry's *run* began, which is earlier than the entry
+  /// itself once SPEC §6.11 has cut it at a midnight. Defaults to the running
+  /// entry's own start, which is the no-rollover case (SPEC §8.1).
+  final DateTime? runStart;
+
   /// The entries on either side of whichever entry a sheet is showing, which
   /// decide whether its boundaries are shared or free (SPEC §7.1).
   final EntryNeighbours neighbours;
@@ -64,6 +77,13 @@ class WidgetHarness {
   final MockTimelineWriter writer = MockTimelineWriter();
   final MockSettingsRepository settingsRepository = MockSettingsRepository();
   final MockTimeEntryRepository entryRepository = MockTimeEntryRepository();
+
+  /// The harness's suggestions, filtered the way SPEC §9.6 filters them.
+  List<ActivitySuggestion> _matching(String query) => query.isEmpty
+      ? suggestions
+      : suggestions
+            .where((s) => s.activity.nameKey.contains(Activity.keyFor(query)))
+            .toList();
 
   Future<void> pump(
     WidgetTester tester,
@@ -97,7 +117,7 @@ class WidgetHarness {
             (ref) => Stream<AppSettings>.value(settings),
           ),
           runningEntryProvider.overrideWith(
-            (ref) => Stream<TimeEntry?>.value(running),
+            (ref) => runningStream ?? Stream<TimeEntry?>.value(running),
           ),
           dayEntriesProvider.overrideWith(
             (ref) => Stream<List<TimeEntry>>.value(entries),
@@ -106,27 +126,34 @@ class WidgetHarness {
             (ref) => Stream<Map<String, Activity>>.value(activities),
           ),
           lastFinishedEntryProvider.overrideWith((ref) async => lastFinished),
+          runStartUtcProvider.overrideWith(
+            (ref) async => runStart ?? running?.startUtc,
+          ),
           entryNeighboursProvider.overrideWith((ref, id) async => neighbours),
           activitySuggestionsProvider.overrideWith(
-            (ref, query) => Stream<List<ActivitySuggestion>>.value(
-              query.isEmpty
-                  ? suggestions
-                  : suggestions
-                        .where(
-                          (s) => s.activity.nameKey.contains(
-                            Activity.keyFor(query),
-                          ),
-                        )
-                        .toList(),
-            ),
+            (ref, query) =>
+                Stream<List<ActivitySuggestion>>.value(_matching(query)),
           ),
+          // The entry sheet's picker ranks the same way but excludes the
+          // entry's own activity rather than the running one (SPEC §6.10).
+          relabelSuggestionsProvider.overrideWith((ref, args) {
+            final (excludeActivityId, query) = args;
+            return Stream<List<ActivitySuggestion>>.value(
+              _matching(query)
+                  .where((s) => s.activity.id != excludeActivityId)
+                  .toList(),
+            );
+          }),
           secondTickerProvider.overrideWith(
             (ref) => Stream<DateTime>.value(clock.nowUtc()),
           ),
           coarseTickerProvider.overrideWith(
             (ref) => Stream<DateTime>.value(clock.nowUtc()),
           ),
-          // Last, so a test can replace anything above it.
+          // Last, so a test can override providers this list does not cover.
+          // Overriding one of the above a second time is not allowed -- riverpod
+          // rejects a duplicate override outright -- which is why the values
+          // that have to *change* mid-test are parameters up there instead.
           ...extraOverrides,
         ],
         child: routerConfig != null

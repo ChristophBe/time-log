@@ -19,7 +19,7 @@ import '../../domain/timeline_writer.dart';
 import '../today/action_feedback.dart';
 import '../today/resume_action.dart';
 import '../today/today_providers.dart';
-import 'activity_editor.dart';
+import 'activity_picker.dart';
 import 'conflict_text.dart';
 import 'entry_providers.dart';
 
@@ -162,6 +162,21 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
     showUndoableFeedback(context, message: 'Entry deleted', undo: undo);
   }
 
+  /// SPEC §6.10: relabel this one span, leaving its times and note alone.
+  ///
+  /// The sheet closes once the entry has moved, because its header is built
+  /// from the entry it was handed and would keep showing the old name and the
+  /// old spine colour. Every other committing action here closes it too; the
+  /// note is the exception, and the note keeps its text in a controller.
+  Future<void> _changeActivity(Activity activity) async {
+    final changed = await showActivityPicker(
+      context,
+      entry: widget.entry,
+      current: activity,
+    );
+    if (changed && mounted) Navigator.of(context).pop();
+  }
+
   /// SPEC §6.6: split at a chosen instant, not at a fixed one.
   ///
   /// The midpoint is only the picker's starting value — "retro-label the second
@@ -260,17 +275,18 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
                   ),
                   const SizedBox(width: Insets.md),
                   Expanded(
-                    // Tap to rename or recolour (SPEC §8.4, §6.7).
+                    // Tap to relabel this entry, or -- a step further in --
+                    // to rename the activity itself (SPEC §8.4, §6.10, §6.7).
                     child: InkWell(
                       onTap: activity == null
                           ? null
-                          : () => showActivityEditor(context, ref, activity),
+                          : () => _changeActivity(activity),
                       borderRadius: Radii.smAll,
                       child: Semantics(
                         button: activity != null,
                         hint: activity == null
                             ? null
-                            : 'Double tap to rename or recolour',
+                            : 'Double tap to change, rename or recolour',
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             vertical: Insets.md,

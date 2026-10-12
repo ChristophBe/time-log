@@ -76,6 +76,7 @@ length"**. Everything else can cost a tap more.
 | **Boundary** | The instant where an entry starts or ends. **Shared** when two entries touch, **free** when a gap or nothing is on the other side. |
 | **Snap** | Rounding applied to times edited by gesture. Default 5 minutes. |
 | **Day window** | `[local midnight, next local midnight)`. All day-scoped views and totals use it. |
+| **Day rollover** | Stopping the running entry at a local midnight and restarting it there, so no running entry spans two days (§6.11). |
 
 ---
 
@@ -190,9 +191,12 @@ assertion re-checks the touched neighbourhood after every write.
 - A **day** is `[local midnight, next local midnight)` in the rendering zone — a DST day is 23 or
   25 hours long, and the calendar axis must be built from real instants rather than `hour * 60`
   arithmetic so that the gridlines stay truthful.
-- An entry crossing midnight is **one row**. It renders as a clipped segment in each day it touches,
-  with a continuation marker (`↑` / `↓`) and a label stating the full span. Day totals count only
-  the part inside the day window.
+- A **finished** entry crossing midnight is **one row**. It renders as a clipped segment in each day
+  it touches, with a continuation marker (`↑` / `↓`) and a label stating the full span. Day totals
+  count only the part inside the day window.
+- The **running** entry never crosses midnight: §6.11 stops it at the boundary and restarts it there.
+  The clipping above still has to exist all the same, because typing (§8.4), dragging (§7), filling a
+  gap (§8.2) and importing (§8.6) can each record a *finished* span across the date line.
 
 ### 5.4 Durability and future-proofing
 
@@ -278,9 +282,78 @@ Soft delete with undo. Deleting an entry leaves a gap — neighbours are never s
 ### 6.9 Edit note
 
 Replaces one entry's note (≤ 2000 chars; empty or blank is stored as `null`, so "has a note" stays
-one question and clearing one survives an export round-trip). One transaction, one undo token. The
-only action here that does not re-check §4: a note touches no instant and no running slot, so there
-is nothing it can invalidate.
+one question and clearing one survives an export round-trip). One transaction, one undo token. One
+of the two actions here that do not re-check §4 (the other is §6.10): a note touches no instant and
+no running slot, so there is nothing it can invalidate.
+
+### 6.10 Change an entry's activity
+
+Re-points **one** entry at a different activity. The name is resolved or created by `nameKey`
+exactly as §6.1 does, so creating is never a mode: typing a name nothing matches makes it, with a
+colour from the least-used palette slot. One transaction, one undo token.
+
+`startAt`, `endAt` and the note are untouched. This is the retro-labelling action — "that hour was
+Email, not Writing specs" — and it is the fix for a mis-start noticed too late for §6.1's
+sub-minute replacement to have caught it.
+
+Not to be confused with §6.7, and the one pair in the app where the confusion would be expensive:
+
+- **§6.10 changes which activity one span belongs to.** Nothing else moves.
+- **§6.7 changes the activity itself**, and therefore every entry that has ever used it.
+
+So they share one affordance — the activity name in the entry sheet (§8.4) — with this action
+primary and §6.7 demoted inside it and labelled as the all-history one.
+
+Edge cases:
+- Picking the activity the entry already has is a no-op: nothing is written and no undo is offered.
+- Legal on the running entry. Relabelling it does not stop it, start anything, or move its start.
+- A relabel can leave two **touching** entries that share an activity. They stay two entries:
+  nothing is merged and no note is absorbed (§16.6).
+
+Like §6.9 this re-checks no §4 invariant, for the same reason: an activity id is not an instant and
+is not the running slot, so there is nothing it can invalidate. Undo restores the entry's previous
+activity, and drops an activity this action created if no entry is left pointing at it.
+
+### 6.11 Day rollover
+
+The one action nobody performs. It happens to a clock left running: when the running entry has
+crossed a local midnight, it is **stopped at that midnight and restarted there**. A night shift then
+reads as 22:00–24:00 yesterday and 00:00–now today, and every day owns its own entries, instead of
+one span draped over the date line and clipped differently by every view that touches it.
+
+1. Read the running entry. If nothing is running, nothing happens.
+2. Compute the local midnights strictly after its start and at or before now, from §5.3's day
+   windows — so a DST day is still 23 or 25 hours long and the cut lands on the real boundary.
+3. For each of them, oldest first: set the current entry's `endUtc` to that midnight, then insert a
+   new running entry beginning at the same instant with the same activity and note.
+
+The cut instant is shared exactly, so this is §4.4's seamless handover and introduces neither a gap
+nor an overlap. It is also necessarily **retroactive**: §4.5 forbids an end in the future, so a
+midnight cannot be written before it has passed. This is therefore a catch-up pass — run at launch,
+on resume, and on the 30-second tick (§9.3) — and not an alarm set for 00:00. Because the instants
+it records are the midnights themselves, *when* it is noticed makes no difference to the data.
+
+Only the **running** entry is cut. A finished entry that crosses midnight stays one row and is
+rendered in both days (§5.3). The difference is who chose the span: a typed, dragged, gap-filled or
+imported entry was recorded across midnight by someone who said so, whereas the running entry has no
+end yet, which makes it the one case where the app picks the boundary rather than honouring one.
+
+Edge cases:
+- **Several midnights at once.** The app can be shut for days with the clock running, so every
+  boundary is backfilled: a Friday-evening start reopened on Monday leaves one entry per whole day
+  plus a running one for today, rather than a single 62-hour span.
+- **A sub-minute scrap before midnight.** Starting at 23:59:40 leaves 20 seconds on the old day, and
+  they are kept. §4.3's minimum is a constraint on editing and not on storage, and taking those 20
+  seconds off the day's total would erase time that did happen — §6.2's reasoning exactly.
+- **Not undoable.** Every other action here returns an undo token because a person pressed
+  something. This one runs by itself, and an Undo button appearing unprompted at midnight would be
+  noise. Both halves are ordinary entries afterwards and can be edited like any others.
+- **Idempotent, and self-healing.** Running the pass again writes nothing. If a spanning running
+  entry reappears — §6.4 reopening an entry that ended at a midnight, or §8.6 importing one — the
+  next pass cuts it again.
+- **A run older than a year** is a forgotten clock, not a year of work. Past 366 boundaries the pass
+  closes the entry at the first midnight and does *not* restart it, so the app comes back with
+  nothing running rather than with 400 invented days.
 
 ---
 
@@ -326,6 +399,11 @@ Snapping applies to the resulting instant, not to the delta, so a block edited t
 
 Its end is "now" and is not editable; the bottom of the running block has no drag handle. Its start
 is editable like any other free or shared boundary.
+
+The entry *before* it is editable in full, including the boundary the two share, which moves both
+edges exactly as §7.1 says any shared boundary does. Only the running entry's own end is special,
+and only because "now" is not a value anyone gets to choose — the entry that just finished is the
+one most likely to need correcting, and §14.5 applies to it like everything else.
 
 ### 7.5 Undo
 
@@ -374,7 +452,11 @@ tells you nothing, and the date is the real title of this screen.
   arrangement was quietly failing.
 - **Long-run banner**: if the running entry exceeds the long-run threshold (default 8 h), a
   non-blocking banner — "Still tracking *X* after 8 h?" — with **Stop at…** (time picker) and
-  **Keep going**. Never a modal, never a notification you cannot dismiss.
+  **Keep going**. Never a modal, never a notification you cannot dismiss. The threshold is measured
+  over the **whole run**, following back through the entries §6.11 cut at midnight — otherwise the
+  one case the banner exists for, a clock left on overnight, would be the one case that never asks,
+  because the rollover had just handed it a fresh entry. **Keep going** likewise stays pressed across
+  a cut rather than returning at 00:00.
 
 ### 8.2 Day calendar view
 
@@ -415,6 +497,10 @@ tells you nothing, and the date is the real title of this screen.
 - **Day navigation**, in the header's first row (§8.1): horizontal swipe, `←`/`→`, the date itself
   opens a date picker, a **Today** action that is only enabled when you are not on today, and the
   day's tracked total beside the date.
+- **The day follows midnight.** If the day on screen is the one that has just ended, the view
+  advances to the new day, so leaving the app open overnight does not strand it on yesterday with no
+  now-line and a total that has stopped moving. A day you navigated to is left where you put it:
+  only today is carried across the boundary (§9.3).
 - On first open the view scrolls to show the now-line, or the day's first entry for past days.
 - Empty state: "No entries for this day", pointing at the composer — which is already on screen, so
   it needs no button of its own — plus **Add entry**.
@@ -457,9 +543,13 @@ two-tap path depended on. A permanent input costs nothing when it is ignored.
 
 Opened by tapping any block or history row. Contents, in order:
 
-1. Activity name (tap to change or rename) behind the activity's coloured spine — the same one its
-   block carries, so the sheet is visibly about *that* block — and the note (inline-editable,
-   ≤ 2000 chars).
+1. Activity name behind the activity's coloured spine — the same one its block carries, so the
+   sheet is visibly about *that* block — and the note (inline-editable, ≤ 2000 chars).
+   Tapping the name opens the **activity picker**: a name field over the §9.6 suggestions, which
+   relabels this entry (§6.10), with "Rename or recolour…" demoted to a footer row for the
+   all-history edit (§6.7). Like the note, the relabel commits on its own rather than through
+   **Save**, so it is its own undo step (§7.5); the sheet closes behind it, because its header is
+   about an activity that is no longer this entry's.
    The note commits when the field lets go rather than through **Save**, so one note change is one
    undo step (§7.5) and is never bundled with a time change. Enter inserts a line; a note is prose.
 2. **Start**, **End**, **Duration** — one group with hairlines between the rows, not three loose
@@ -524,6 +614,10 @@ A running entry is nothing but a stored `startUtc`. Elapsed time is always compu
 device sleep, and clock-zone changes need **no** recovery code, and there is no background service,
 no foreground service requirement, and no doze-mode problem. The UI timer is a pure display concern.
 
+§6.11's day rollover is not an exception to this. It accumulates nothing and recovers nothing: it
+only moves where one span is recorded as ending, so that a day owns its own entries. Elapsed time is
+still `now - startUtc` over whatever the current entry is.
+
 ### 9.2 Clock jumps
 
 If the wall clock moves backwards such that `now < runningEntry.startUtc`, the running card shows
@@ -532,8 +626,18 @@ otherwise never rendered negative or as `--`.
 
 ### 9.3 Lifecycle
 
-On resume: re-read the clock, re-render the now-line, re-run the long-run check. No reconciliation
-pass is needed (§9.1).
+On resume: re-read the clock, re-render the now-line, re-run the long-run check, and run the §6.11
+day rollover. It also runs at launch and on the 30-second tick, so a midnight that passes with the
+app open is noticed within 30 seconds — and the instants it writes are the midnights themselves, so
+being late changes nothing but the lag on the header.
+
+That rollover is the only reconciliation pass in the app, and it exists because a midnight cannot be
+written before it has passed (§4.5), not because any state needs recovering (§9.1). It is safe to
+run at any time: it does nothing when nothing is running and nothing when no boundary has been
+crossed.
+
+The day the home screen shows follows the real day across that boundary, under the rule in §8.2:
+the day that has just ended advances, a day you navigated to does not.
 
 ### 9.4 Performance budgets
 
@@ -564,9 +668,10 @@ score = Σ over its entries of 0.5 ^ (ageInDays / 7)      // 7-day half-life
 ```
 
 so frequency and recency both count and neither dominates. While typing, rows whose `nameKey`
-*starts with* the query are boosted above substring matches; ties break on most-recent use. The
-currently running activity is excluded. With no history, the list is empty and the field explains
-"Type what you are doing".
+*starts with* the query are boosted above substring matches; ties break on most-recent use. One
+activity is always excluded — whichever one picking would be a no-op: the running one in the start
+composer (§8.3), the entry's current one in the activity picker (§8.4). With no history, the list is
+empty and the field explains "Type what you are doing".
 
 ### 9.7 Colour
 
@@ -834,21 +939,33 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 `subMinuteHandoverReplacesInsteadOfSplitting` · `failedMutationChangesNothing` ·
 `deleteLeavesGapAndDoesNotStretchNeighbours`.
 
+**Unit — relabelling (§6.10).** `relabelKeepsTimesAndNote` ·
+`relabelResolvesAnExistingActivityByNameKey` · `relabelCreatesTheActivityWhenTheNameIsNew` ·
+`relabelIsUndoable` · `relabelToTheSameActivityChangesNothing` · `relabelWorksOnTheRunningEntry`.
+
 **Unit — boundary math (§7).** `draggingSharedBoundaryConservesTotalTrackedTime` ·
 `draggingFreeEdgeGrowsIntoGapOnly` · `clampStopsAtNeighbourMinusMinimum` ·
 `snapRoundsInstantNotDelta` · `repeatedEditsDoNotDrift` · `runningEntryEndIsNotEditable` ·
-`typedOverlapIsRejectedWithNamedConflict`.
+`theBoundaryBeforeTheRunningEntryIsEditable` · `typedOverlapIsRejectedWithNamedConflict`.
 
 **Unit — day/zone logic (§5.3).** `entryCrossingMidnightRendersInBothDays` ·
 `dayTotalsClipToDayWindow` · `dstShortDayHas23HourAxis` · `dstLongDayHas25HourAxis` ·
 `dayWindowFollowsRenderingZone`.
+
+**Unit — day rollover (§6.11).** `runningEntryIsCutAtMidnight` ·
+`rollOverRestartsTheSameActivityAndNote` · `rollOverBackfillsEveryMissedMidnight` ·
+`rollOverKeepsTheSubMinuteScrapBeforeMidnight` · `rollOverConservesTotalTrackedTime` ·
+`rollOverIsIdempotent` · `rollOverDoesNothingWhenNothingIsRunning` · `rollOverFollowsDstDayLength`.
 
 **Unit — suggestions (§9.6).** `recentBeatsFrequentWithinHalfLife` · `prefixMatchOutranksSubstring` ·
 `runningActivityIsExcluded`.
 
 **Widget.** Running band states (idle / running / future-start) · calendar geometry (block position
 and height for a given zoom, short-entry minimum, gap rendering) · start composer keyboard flow ·
-entry-sheet three-field consistency · semantics labels and actions on blocks, gaps and steppers ·
+entry-sheet three-field consistency · entry-sheet activity picker (pick, create, keyboard, and the
+§6.7 route out of it) · the long-run banner measured across a midnight cut and staying dismissed
+over one · the day view following midnight and leaving a navigated-to day alone ·
+semantics labels and actions on blocks, gaps and steppers ·
 golden tests at 1.0× and 2.0× text scale in light and dark.
 
 The goldens are the only tests that protect the *look*: everything else asserts behaviour and would
@@ -877,8 +994,9 @@ integration suite on one mobile and one desktop target.
 | **P0 Foundation** | `flutter create` for all six targets, deps, folder layout, Drift DB + schema (§5.2) + migration harness, `Clock`, Riverpod wiring, M3 theme + palette, router skeleton, CI. | App launches on phone, desktop and web against an empty DB; invariant tests exist and pass against the writer's stubs. |
 | **P1 Core tracking** | `TimelineWriter` start/stop/resume/continue, running card, Start sheet with suggestions, persistence across relaunch. | Start → switch → resume works end-to-end; §4 and §6 tests green; running entry survives app kill. |
 | **P2 Day calendar** | Day view, axis, zoom, now-line, blocks, gaps, midnight splitting, day navigation, day totals. | Calendar geometry and day/zone tests green; a day of real use reads correctly, including across a DST change. |
-| **P3 Editing** | Drag handles, the §7 rules, entry sheet with typed fields and steppers, split, delete, undo — each landing with its keyboard and screen-reader equivalent. | §7 tests green; a boundary can be corrected by drag, by typing, and by keyboard alone with identical results. |
+| **P3 Editing** | Drag handles, the §7 rules, entry sheet with typed fields and steppers, split, delete, change an entry's activity (§6.10), undo — each landing with its keyboard and screen-reader equivalent. | §7 tests green; a boundary can be corrected by drag, by typing, and by keyboard alone with identical results. |
 | **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | **Built.** Export → wipe → import round-trips, asserted in `backup_round_trip_test.dart`. §10.6's manual passes (TalkBack, VoiceOver, keyboard-only, 200 %) are still outstanding, as is the `integration_test` run, which needs a device. |
+| **P4.1 Day rollover** | Stop and restart the running entry at midnight (§6.11), the catch-up pass at launch / resume / tick (§9.3) — the app's first lifecycle hook — the day view following midnight (§8.2), and the long-run threshold measured over the whole run (§8.1). | Rollover tests green; a clock left running overnight comes back as one entry per day with the 8 h banner still able to fire. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, projects/tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
@@ -909,6 +1027,9 @@ surface, and the spec updated if the phase taught us something.
 11. Performance budgets in §9.4 met on a mid-range Android device with 50 000 seeded entries.
 12. The app runs on Android, iOS, macOS, Windows, Linux and Web from one codebase, with no feature
     silently missing on a platform (anything platform-gated is stated in the UI).
+13. A clock left running across one or more midnights comes back as one entry per day plus a running
+    one for today, with no time gained or lost, and the long-run banner still measuring the whole
+    run. Verified by test.
 
 ---
 
@@ -927,6 +1048,8 @@ The original request, mapped to where it is specified:
 | Log a start and a stop time | §5.1, §6.1, §6.2 |
 | Resume an existing log as a new entry | §6.3, §6.4, §8.4, §8.5 |
 | Change entry length afterwards to fix errors | §6.5, §7 in full, §8.4, §14.5 |
+| Fix a mis-labelled entry afterwards | §6.10, §8.4 |
+| Stop and restart entries at the end of the day | §6.11, §9.3, §8.2 |
 
 ---
 
@@ -945,3 +1068,12 @@ The original request, mapped to where it is specified:
 5. **Day total vs. the old footer** — the home screen now carries only the tracked total. If
    untracked time or the per-activity split turns out to be wanted at a glance, the day header is
    where it goes back; revisit in P4 alongside reports.
+6. **Merging after a relabel** — §6.10 can leave two touching entries sharing an activity, and v1
+   leaves both. If that turns out to be the common case rather than the exception, the smallest fix
+   is a second SnackBar action offering to merge them, which needs a rule for which note survives.
+   Revisit after real use.
+7. **Finished entries that cross midnight** — §6.11 cuts only the running entry, so a span typed,
+   dragged, gap-filled or imported across the date line is still one row (§5.3). That keeps the app
+   from overruling a span someone entered deliberately, at the cost of two kinds of midnight-crossing
+   entry existing. If the clipped rendering turns out to be the part nobody wants, the smallest fix is
+   to cut on save as well — which also makes §5.3's clipping, and the code behind it, deletable.
