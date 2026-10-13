@@ -62,7 +62,7 @@ jobs:
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/time-log-$V-android.apk"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android
           path: dist/
@@ -85,7 +85,7 @@ jobs:
         run: |
           mkdir -p dist
           (cd build/web && zip -qr "$GITHUB_WORKSPACE/dist/time-log-$V-web.zip" .)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web
           path: dist/
@@ -118,7 +118,7 @@ jobs:
           mkdir -p dist
           tar -czf "dist/time-log-$V-linux-x64.tar.gz" \
             -C build/linux/x64/release/bundle .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: dist/
@@ -147,7 +147,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path build/windows/x64/runner/Release/* `
             -DestinationPath "dist/time-log-$env:V-windows-x64.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/
@@ -187,14 +187,14 @@ jobs:
           mkdir -p dist
           cp build/release/*.dmg dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: dist/
 
       # A rejection is only useful with the log the script saved beside it.
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-notary-logs
           path: build/release/notary-*.json
