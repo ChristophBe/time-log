@@ -1,0 +1,280 @@
+# SPEC §12's gates, run for us instead of by hand, plus the §14.12 claim that the
+# app builds for all six platforms from one codebase.
+#
+# Pull requests get the gates plus the two platforms that are cheap to build;
+# pushes to main additionally build the other four and run the integration suite,
+# so a break on a platform nobody has installed locally still surfaces.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The suite renders local time from UTC fixtures dated 2026-03-10, so it
+  # assumes a UTC+01:00 rendering zone; 18 tests fail on a UTC runner without
+  # this. Dart can only take the zone from the process environment, so this is
+  # the fix rather than a workaround -- see README.
+  TZ: Europe/Berlin
+  # Pinned, not `stable`: pubspec.lock records flutter >=3.47.0 and .metadata
+  # pins revision 5fc346839b, and the goldens are pixel-exact against whatever
+  # Skia the SDK ships.
+  FLUTTER_VERSION: 3.47.6
+
+jobs:
+  checks:
+    name: analyze, format, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      # Where sqlite3's native-asset hook parks the prebuilt library it fetches
+      # from GitHub releases. Just this subtree: all of .dart_tool is ~1 GB.
+      - uses: actions/cache@v4
+        with:
+          path: .dart_tool/hooks_runner
+          key: hooks-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+      - run: flutter pub get
+
+      # The generated files are committed, and analysis_options.yaml excludes
+      # **/*.g.dart, so nothing else in the repo would notice a stale one.
+      - name: Generated code is current
+        run: |
+          dart run build_runner build
+          git diff --exit-code
+
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter analyze
+      - name: flutter test
+        run: flutter test --exclude-tags golden
+
+  goldens:
+    name: goldens
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: .dart_tool/hooks_runner
+          key: hooks-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+      - run: flutter pub get
+
+      # On macOS because that is where they were made. matchesGoldenFile has no
+      # tolerance, and the two Apple-idiom goldens carry ImageFilter.blur, which
+      # is exactly where rasterisers disagree across platforms.
+      - run: flutter test --tags golden
+
+      # The only way to see a pixel diff from a runner.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-failures
+          path: test/features/failures/
+          if-no-files-found: ignore
+
+  build-web:
+    name: build web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # Also confirms the committed web/sqlite3.wasm and web/drift_worker.js are
+      # picked up (SPEC §9.5).
+      - run: flutter build web --release
+
+  build-android:
+    name: build android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # Debug-signed: android/app/build.gradle.kts still carries the template's
+      # signingConfig (SPEC §16).
+      - run: flutter build apk --release
+
+  build-linux:
+    name: build linux
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Desktop toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev
+      # The jni FFI plugin comes in transitively via flutter_timezone, so the
+      # desktop builds want a JDK as well as the GTK toolchain.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+  build-windows:
+    name: build windows
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+  build-ios:
+    name: build ios
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # The only iOS build the repo can do: ios/Runner.xcodeproj carries no
+      # DEVELOPMENT_TEAM, so there is no identity to sign with.
+      - run: flutter build ios --release --no-codesign
+
+  build-macos:
+    name: build macos
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+
+      - name: Is there a signing certificate?
+        id: signing
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        run: |
+          if [ -n "$CERT" ]; then
+            echo 'available=true' >>"$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Import the Developer ID certificate
+        if: steps.signing.outputs.available == 'true'
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: ./tool/ci/import_signing_certificate.sh
+
+      # The Release configuration signs during the build, so this exercises the
+      # real signing path and the script's own notarisation preflight -- hardened
+      # runtime, no get-task-allow, a secure timestamp -- without the two round
+      # trips to Apple that only a release needs.
+      - name: Build, sign and package
+        if: steps.signing.outputs.available == 'true'
+        env:
+          SKIP_NOTARIZE: '1'
+        run: ./tool/release_macos.sh
+
+      # No certificate: still prove it compiles. Debug signs ad hoc, so it needs
+      # no identity -- but say plainly that the signed path went unchecked.
+      - name: Build unsigned (no certificate available)
+        if: steps.signing.outputs.available != 'true'
+        run: |
+          echo '::warning title=macOS signing skipped::No MACOS_CERTIFICATE_P12 secret, so the Developer ID path was not exercised; built Debug instead.'
+          flutter build macos --debug
+
+  integration-android:
+    name: integration (android)
+    if: github.event_name == 'push'
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # The emulator needs KVM, which the runner has but does not expose to the
+      # unprivileged user by default.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: flutter test integration_test
+
+  integration-macos:
+    name: integration (macos)
+    if: github.event_name == 'push'
+    needs: checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # Debug signs ad hoc, so the desktop target needs no certificate.
+      - run: flutter test integration_test -d macos

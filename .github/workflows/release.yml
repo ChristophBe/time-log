@@ -1,0 +1,229 @@
+# A `v*` tag cuts a GitHub Release with something installable for every platform
+# the repo can actually sign for.
+#
+# The macOS artefact is the interesting one: it is built by tool/release_macos.sh,
+# the same script used by hand, so there is one definition of "a release build"
+# rather than one in bash and a second in YAML.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  TZ: Europe/Berlin
+  FLUTTER_VERSION: 3.47.6
+
+jobs:
+  # The DMG takes its name from pubspec, not from the tag, so a mismatch would
+  # quietly publish time-log-0.1.0.dmg under a v0.2.0 release.
+  guard:
+    name: tag matches pubspec
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)"
+          if [ -z "$version" ]; then
+            echo '::error::could not read version from pubspec.yaml'
+            exit 1
+          fi
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pubspec version $version"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+  android:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - name: Stage
+        env:
+          V: ${{ needs.guard.outputs.version }}
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/time-log-$V-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/
+
+  web:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build web --release
+      - name: Stage
+        env:
+          V: ${{ needs.guard.outputs.version }}
+        run: |
+          mkdir -p dist
+          (cd build/web && zip -qr "$GITHUB_WORKSPACE/dist/time-log-$V-web.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dist/
+
+  linux:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Desktop toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - name: Stage
+        env:
+          V: ${{ needs.guard.outputs.version }}
+        run: |
+          mkdir -p dist
+          tar -czf "dist/time-log-$V-linux-x64.tar.gz" \
+            -C build/linux/x64/release/bundle .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/
+
+  windows:
+    needs: guard
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Stage
+        shell: pwsh
+        env:
+          V: ${{ needs.guard.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "dist/time-log-$env:V-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/
+
+  macos:
+    needs: guard
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+
+      - name: Import the Developer ID certificate
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: ./tool/ci/import_signing_certificate.sh
+
+      - name: Store notarytool credentials
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: ./tool/ci/store_notary_credentials.sh
+
+      # Signs, verifies, notarises, staples and packages. Unlike every other job
+      # here this one is not "build and zip" — the script is the release.
+      - name: Build, sign, notarise and package
+        run: ./tool/release_macos.sh
+
+      - name: Stage
+        run: |
+          mkdir -p dist
+          cp build/release/*.dmg dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/
+
+      # A rejection is only useful with the log the script saved beside it.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-notary-logs
+          path: build/release/notary-*.json
+          if-no-files-found: ignore
+
+  publish:
+    needs: [guard, android, web, linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -lh dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          generate_release_notes: true
+          body: |
+            ### Artefacts
+
+            | Platform | File | Notes |
+            | --- | --- | --- |
+            | macOS | `.dmg` | Developer ID, notarised and stapled — opens with no Gatekeeper warning |
+            | Android | `.apk` | **Debug-signed** (SPEC §16): sideload only, not uploadable to Play |
+            | Windows | `.zip` | Unsigned; SmartScreen will warn |
+            | Linux | `.tar.gz` | Portable bundle |
+            | Web | `.zip` | Static bundle; needs COOP/COEP headers for OPFS (SPEC §9.5) |
+
+            No iOS build: the repo carries no signing identity for it, so there is
+            nothing distributable to attach.

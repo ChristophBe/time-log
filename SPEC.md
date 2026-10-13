@@ -969,8 +969,13 @@ semantics labels and actions on blocks, gaps and steppers ·
 golden tests at 1.0× and 2.0× text scale in light and dark.
 
 The goldens are the only tests that protect the *look*: everything else asserts behaviour and would
-stay green through a redesign. They render in the test font rather than Roboto, which is what keeps
-them machine-independent — read them for layout, weight and colour, which is what drifts.
+stay green through a redesign. They render in the vendored Geist faces, loaded from `assets/fonts/`
+before every test, and deliberately **not** in MaterialIcons, which lives in the SDK — so icons come
+out as test-font boxes and cannot drift. Read them for layout, weight and colour, which is what does.
+
+What that does not fix is the rasteriser: `matchesGoldenFile` has no tolerance, and the two
+Apple-idiom goldens carry a real blur. So they are tagged `golden` and run on one platform, the one
+that made them.
 
 **Integration (`integration_test`).** The core loop on a real DB: start A → start B → verify
 handover instant → resume A → correct a boundary by drag → undo → kill and relaunch the app →
@@ -982,8 +987,16 @@ current and asserting §4 still holds.
 **Architecture.** `timelineWriterIsTheOnlyWriter` (grep for `time_entries` updates outside it) ·
 `noDateTimeNowOutsideClock` (§11.4) · `domainHasNoFlutterImports`.
 
-CI runs `flutter analyze`, `dart format --set-exit-if-changed`, `flutter test`, and the
-integration suite on one mobile and one desktop target.
+CI (`.github/workflows/ci.yml`) runs `flutter analyze`, `dart format --set-exit-if-changed`,
+`flutter test`, and the integration suite on one mobile and one desktop target. It also checks that
+the committed `*.g.dart` files are current, by regenerating them and diffing — `analysis_options.yaml`
+excludes them from analysis, so nothing else would notice a stale one. Every push to `main` builds
+all six platforms (§14.12); a pull request builds web and Android.
+
+**The suite needs a UTC+01:00 rendering zone.** Fixtures are UTC instants on 2026-03-10 and the UI
+renders local time (§5.3), so 18 tests fail under `TZ=UTC`. Dart takes the local zone from the
+process environment and nowhere else, which makes exporting `TZ` the fix and not a workaround; CI and
+the README both use `Europe/Berlin`.
 
 ---
 
@@ -991,12 +1004,13 @@ integration suite on one mobile and one desktop target.
 
 | Phase | Scope | Done when |
 | --- | --- | --- |
-| **P0 Foundation** | `flutter create` for all six targets, deps, folder layout, Drift DB + schema (§5.2) + migration harness, `Clock`, Riverpod wiring, M3 theme + palette, router skeleton, CI. | App launches on phone, desktop and web against an empty DB; invariant tests exist and pass against the writer's stubs. |
+| **P0 Foundation** | `flutter create` for all six targets, deps, folder layout, Drift DB + schema (§5.2) + migration harness, `Clock`, Riverpod wiring, M3 theme + palette, router skeleton, CI. | App launches on phone, desktop and web against an empty DB; invariant tests exist and pass against the writer's stubs. CI was the one item that did not land here; it arrived in P4.2. |
 | **P1 Core tracking** | `TimelineWriter` start/stop/resume/continue, running card, Start sheet with suggestions, persistence across relaunch. | Start → switch → resume works end-to-end; §4 and §6 tests green; running entry survives app kill. |
 | **P2 Day calendar** | Day view, axis, zoom, now-line, blocks, gaps, midnight splitting, day navigation, day totals. | Calendar geometry and day/zone tests green; a day of real use reads correctly, including across a DST change. |
 | **P3 Editing** | Drag handles, the §7 rules, entry sheet with typed fields and steppers, split, delete, change an entry's activity (§6.10), undo — each landing with its keyboard and screen-reader equivalent. | §7 tests green; a boundary can be corrected by drag, by typing, and by keyboard alone with identical results. |
-| **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | **Built.** Export → wipe → import round-trips, asserted in `backup_round_trip_test.dart`. §10.6's manual passes (TalkBack, VoiceOver, keyboard-only, 200 %) are still outstanding, as is the `integration_test` run, which needs a device. |
+| **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | **Built.** Export → wipe → import round-trips, asserted in `backup_round_trip_test.dart`. §10.6's manual passes (TalkBack, VoiceOver, keyboard-only, 200 %) are still outstanding. The `integration_test` run needed a device, which P4.2 supplies. |
 | **P4.1 Day rollover** | Stop and restart the running entry at midnight (§6.11), the catch-up pass at launch / resume / tick (§9.3) — the app's first lifecycle hook — the day view following midnight (§8.2), and the long-run threshold measured over the whole run (§8.1). | Rollover tests green; a clock left running overnight comes back as one entry per day with the 8 h banner still able to fire. |
+| **P4.2 CI** | GitHub Actions: §12's gates on every pull request, all six platform builds and the integration suite on every push to `main` (§14.12), and a `v*` tag cutting a release — the macOS artefact through `tool/release_macos.sh` so there is one definition of a release build. | Workflows green on `main`, including the first execution of the integration suite. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, projects/tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
@@ -1072,7 +1086,12 @@ The original request, mapped to where it is specified:
    leaves both. If that turns out to be the common case rather than the exception, the smallest fix
    is a second SnackBar action offering to merge them, which needs a rule for which note survives.
    Revisit after real use.
-7. **Finished entries that cross midnight** — §6.11 cuts only the running entry, so a span typed,
+7. **Android release signing** — `android/app/build.gradle.kts` still signs release builds with the
+   debug key, so the APK a tag produces is sideloadable and nothing more. That is deliberate for now:
+   an upload keystore is a secret that cannot be rotated — lose it and a published app can never be
+   updated again — and there is nothing published yet to need one. Revisit when there is a reason to
+   put the app on Play.
+8. **Finished entries that cross midnight** — §6.11 cuts only the running entry, so a span typed,
    dragged, gap-filled or imported across the date line is still one row (§5.3). That keeps the app
    from overruling a span someone entered deliberately, at the cost of two kinds of midnight-crossing
    entry existing. If the clipped rendering turns out to be the part nobody wants, the smallest fix is

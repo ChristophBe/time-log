@@ -1,3 +1,9 @@
+// Tagged so the goldens can run where they were made. They are pixel-exact
+// against the stock comparator, and CI splits them onto a macOS runner while
+// everything else runs on Linux (`--tags golden` / `--exclude-tags golden`).
+@Tags(<String>['golden'])
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
