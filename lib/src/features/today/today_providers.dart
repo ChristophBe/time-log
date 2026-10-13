@@ -15,24 +15,58 @@ DayWindowCalculator dayWindows(Ref ref) => const LocalDayWindowCalculator();
 /// The day the calendar is showing. Defaults to today.
 @riverpod
 class SelectedDay extends _$SelectedDay {
+  /// Whether the view is still tracking the real day rather than sitting on one
+  /// that was chosen. Only a tracking view is carried across midnight, which is
+  /// the whole distinction [followNow] needs and the window alone cannot tell
+  /// you: "yesterday, navigated to at 23:50" and "today, five minutes later"
+  /// are the same window (SPEC §8.2).
+  bool _followsToday = true;
+
   @override
   DayWindow build() => ref
       .watch(dayWindowsProvider)
       .containing(ref.watch(appClockProvider).nowUtc());
 
-  void goTo(DayWindow window) => state = window;
+  void goTo(DayWindow window) {
+    _followsToday = false;
+    state = window;
+  }
 
-  void goToDate(DateTime localDate) => state = ref
-      .read(dayWindowsProvider)
-      .forDate(localDate.year, localDate.month, localDate.day);
+  void goToDate(DateTime localDate) {
+    _followsToday = false;
+    state = ref
+        .read(dayWindowsProvider)
+        .forDate(localDate.year, localDate.month, localDate.day);
+  }
 
-  void nextDay() => state = ref.read(dayWindowsProvider).next(state);
+  void nextDay() {
+    _followsToday = false;
+    state = ref.read(dayWindowsProvider).next(state);
+  }
 
-  void previousDay() => state = ref.read(dayWindowsProvider).previous(state);
+  void previousDay() {
+    _followsToday = false;
+    state = ref.read(dayWindowsProvider).previous(state);
+  }
 
-  void today() => state = ref
-      .read(dayWindowsProvider)
-      .containing(ref.read(appClockProvider).nowUtc());
+  void today() {
+    _followsToday = true;
+    state = ref
+        .read(dayWindowsProvider)
+        .containing(ref.read(appClockProvider).nowUtc());
+  }
+
+  /// Carries a tracking view across midnight (SPEC §8.2, §9.3).
+  ///
+  /// Without this the day stays on yesterday once the clock passes midnight:
+  /// the now-line leaves the window, the total stops moving, and the entry
+  /// §6.11 has just started is on a day that is not on screen.
+  void followNow() {
+    if (!_followsToday) return;
+    final now = ref.read(appClockProvider).nowUtc();
+    if (state.contains(now)) return;
+    state = ref.read(dayWindowsProvider).containing(now);
+  }
 
   bool get isToday => state.contains(ref.read(appClockProvider).nowUtc());
 }
@@ -77,6 +111,22 @@ Stream<List<ActivitySuggestion>> activitySuggestions(Ref ref, String query) {
         query: query,
         excludeActivityId: running?.activityId,
       );
+}
+
+/// When the current run began, following back through the entries SPEC §6.11
+/// cut apart at midnight -- so a clock left on overnight reports eight hours
+/// rather than however long it is since 00:00 (SPEC §8.1).
+///
+/// An instant and not a duration, so the 30-second tick does not drag a
+/// database walk behind it: this changes only when the timeline does, and the
+/// banner measures against now itself.
+@riverpod
+Future<DateTime?> runStartUtc(Ref ref) {
+  final running = ref.watch(runningEntryProvider).value;
+  if (running == null) return Future<DateTime?>.value();
+  return ref
+      .watch(timeEntryRepositoryProvider)
+      .runStartOf(running, days: ref.watch(dayWindowsProvider));
 }
 
 /// The most recent finished entry, for "Resume" when nothing is running.

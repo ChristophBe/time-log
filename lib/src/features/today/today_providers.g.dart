@@ -92,7 +92,7 @@ final class SelectedDayProvider
   }
 }
 
-String _$selectedDayHash() => r'55b5e1c92b0c448146c284a096d28dfdcec837c0';
+String _$selectedDayHash() => r'a09b9a9a655a4fadb593ae916491869070ca1a21';
 
 /// The day the calendar is showing. Defaults to today.
 
@@ -366,6 +366,67 @@ final class ActivitySuggestionsFamily extends $Family
   @override
   String toString() => r'activitySuggestionsProvider';
 }
+
+/// When the current run began, following back through the entries SPEC §6.11
+/// cut apart at midnight -- so a clock left on overnight reports eight hours
+/// rather than however long it is since 00:00 (SPEC §8.1).
+///
+/// An instant and not a duration, so the 30-second tick does not drag a
+/// database walk behind it: this changes only when the timeline does, and the
+/// banner measures against now itself.
+
+@ProviderFor(runStartUtc)
+final runStartUtcProvider = RunStartUtcProvider._();
+
+/// When the current run began, following back through the entries SPEC §6.11
+/// cut apart at midnight -- so a clock left on overnight reports eight hours
+/// rather than however long it is since 00:00 (SPEC §8.1).
+///
+/// An instant and not a duration, so the 30-second tick does not drag a
+/// database walk behind it: this changes only when the timeline does, and the
+/// banner measures against now itself.
+
+final class RunStartUtcProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<DateTime?>,
+          DateTime?,
+          FutureOr<DateTime?>
+        >
+    with $FutureModifier<DateTime?>, $FutureProvider<DateTime?> {
+  /// When the current run began, following back through the entries SPEC §6.11
+  /// cut apart at midnight -- so a clock left on overnight reports eight hours
+  /// rather than however long it is since 00:00 (SPEC §8.1).
+  ///
+  /// An instant and not a duration, so the 30-second tick does not drag a
+  /// database walk behind it: this changes only when the timeline does, and the
+  /// banner measures against now itself.
+  RunStartUtcProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'runStartUtcProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$runStartUtcHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<DateTime?> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<DateTime?> create(Ref ref) {
+    return runStartUtc(ref);
+  }
+}
+
+String _$runStartUtcHash() => r'f8e4830e06ed48cc54e9fe8e60f5c5bc011adf29';
 
 /// The most recent finished entry, for "Resume" when nothing is running.
 

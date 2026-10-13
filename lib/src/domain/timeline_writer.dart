@@ -7,9 +7,12 @@ import '../core/time_zone.dart';
 import '../data/db/database.dart';
 import '../data/db/database_provider.dart';
 import '../data/db/mappers.dart';
+import 'backup/json_backup.dart';
 import 'models/activity.dart';
 import 'models/time_entry.dart';
 import 'timeline/continue_rule.dart';
+import 'timeline/day_rollover.dart';
+import 'timeline/day_window.dart';
 import 'timeline/invariants.dart';
 import 'timeline/timeline_math.dart';
 
@@ -97,6 +100,27 @@ class StopOutcome {
 
   /// Under a minute, so the UI offers "Discard" alongside Undo (SPEC §6.2).
   bool get wasVeryShort => duration != null && duration! < kMinEntryLength;
+}
+
+/// What one SPEC §6.11 rollover pass did.
+class RolloverOutcome {
+  const RolloverOutcome({
+    required this.boundaries,
+    required this.runningEntryId,
+  });
+
+  const RolloverOutcome.nothingToDo()
+    : boundaries = const <DateTime>[],
+      runningEntryId = null;
+
+  /// The midnights that were cut at, oldest first.
+  final List<DateTime> boundaries;
+
+  /// The entry left running, or null when nothing was running to begin with or
+  /// the run was too old to restart (SPEC §6.11).
+  final String? runningEntryId;
+
+  bool get changedAnything => boundaries.isNotEmpty;
 }
 
 class MoveOutcome {
@@ -314,6 +338,88 @@ class TimelineWriter {
     );
   });
 
+  // ----------------------------------------------------------- day rollover
+
+  /// Stops the running entry at every local midnight it has crossed and
+  /// restarts it there, so no running entry ever spans a day (SPEC §6.11).
+  ///
+  /// Safe to call whenever: it writes nothing when nothing is running and
+  /// nothing when no boundary has been crossed, and running it twice does what
+  /// running it once did. That is what lets it be a catch-up pass at launch, on
+  /// resume and on the tick (SPEC §9.3) instead of an alarm set for 00:00 --
+  /// which §4.5 rules out anyway, since a midnight has to be in the past before
+  /// it can be written as an end.
+  ///
+  /// The one method here that returns no [UndoToken]. Every other one does
+  /// because a person pressed something; this one runs by itself, and an Undo
+  /// button appearing unprompted at midnight would be noise. Both halves are
+  /// ordinary entries afterwards and can be edited like any others.
+  Future<RolloverOutcome> rollOverRunningEntry({
+    required DayWindowCalculator days,
+  }) async {
+    final zone = await _zone();
+    return _db.transaction(() async {
+      final runningRow = await _db.runningEntry().getSingleOrNull();
+      if (runningRow == null) return const RolloverOutcome.nothingToDo();
+      final now = _clock.nowUtc();
+      final running = runningRow.toDomain();
+      final plan = planDayRollover(
+        startUtc: running.startUtc,
+        now: now,
+        days: days,
+      );
+      if (plan.isEmpty) return const RolloverOutcome.nothingToDo();
+
+      var current = running;
+      for (final boundary in plan.boundaries) {
+        // `_setEnd` would stamp `updatedAt` with the end instant, which is
+        // right for a stop happening now and wrong for a cut made after the
+        // fact: the row is being touched now, at a boundary already past.
+        await _writeTimes(current.copyWith(endUtc: boundary), now);
+        // An abandoned run is closed and not picked back up (SPEC §6.11).
+        if (plan.abandoned) break;
+
+        // Closed before the next one is opened, every time: the single-running
+        // rule is a unique index over a generated column (SPEC §5.2), so two
+        // open rows for even an instant trip it. `_start` relies on the same
+        // ordering.
+        final id = _ids.next();
+        await _db
+            .into(_db.timeEntries)
+            .insert(
+              TimeEntriesCompanion.insert(
+                id: id,
+                activityId: current.activityId,
+                note: Value(current.note),
+                startUtc: toMillis(boundary),
+                endUtc: const Value(null),
+                tzName: zone,
+                createdAt: toMillis(now),
+                updatedAt: toMillis(now),
+              ),
+            );
+        current = TimeEntry(
+          id: id,
+          activityId: current.activityId,
+          startUtc: boundary,
+          endUtc: null,
+          tzName: zone,
+          note: current.note,
+        );
+      }
+
+      // The final entry is the one worth re-checking: its start is the last
+      // boundary written and its predecessor is the stub before it. The run's
+      // own start never moved, and an end that moved *earlier* cannot have
+      // grown into anything.
+      await _validateAround(current.id, now);
+      return RolloverOutcome(
+        boundaries: plan.boundaries,
+        runningEntryId: plan.abandoned ? null : current.id,
+      );
+    });
+  }
+
   // ----------------------------------------------------------------- editing
 
   /// Moves one boundary, applying the whole of SPEC §7 via
@@ -466,6 +572,93 @@ class TimelineWriter {
     });
   }
 
+  /// Edits an entry's note (SPEC §8.4).
+  ///
+  /// The only entry field that does not touch the timeline, so unlike every
+  /// other method here it reads no neighbourhood and re-checks no SPEC §4
+  /// invariant: there is nothing a note can make invalid.
+  ///
+  /// An empty or whitespace-only note is stored as null rather than as "", so
+  /// "has a note" is one question and not two.
+  Future<UndoToken> setEntryNote({
+    required String entryId,
+    required String? note,
+  }) async => _db.transaction(() async {
+    final trimmed = note?.trim();
+    final value = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    if (value != null && value.length > TimeEntry.maxNoteLength) {
+      throw ArgumentError.value(
+        note,
+        'note',
+        'longer than ${TimeEntry.maxNoteLength} characters',
+      );
+    }
+    final now = _clock.nowUtc();
+    final row = await _requireRow(entryId);
+    await (_db.update(
+      _db.timeEntries,
+    )..where((t) => t.id.equals(entryId))).write(
+      TimeEntriesCompanion(note: Value(value), updatedAt: Value(toMillis(now))),
+    );
+    return _undoToken('Note changed', snapshots: <TimeEntryRow>[row]);
+  });
+
+  /// Re-points one entry at a different activity, creating it if the name is
+  /// new (SPEC §6.10).
+  ///
+  /// The retro-labelling action: it moves nothing on the timeline, so like
+  /// [setEntryNote] it reads no neighbourhood and re-checks no SPEC §4
+  /// invariant. An activity id is not an instant and is not the running slot,
+  /// so there is nothing it can invalidate -- which is also why it is legal on
+  /// the running entry.
+  ///
+  /// A null [UndoToken] means the entry already had that activity and nothing
+  /// was written, the no-op of SPEC §6.1 in a different key.
+  Future<({Activity activity, UndoToken? undo})> setEntryActivity({
+    required String entryId,
+    required String name,
+  }) async {
+    if (!Activity.isValidName(name)) {
+      throw ArgumentError.value(name, 'name', 'not a usable activity name');
+    }
+    return _db.transaction(() async {
+      final now = _clock.nowUtc();
+      final row = await _requireRow(entryId);
+      // Asked before resolving, so the undo knows whether this call is what
+      // brought the activity into existence.
+      final existed = await _findActivityByKey(Activity.keyFor(name)) != null;
+      final activity = await _findOrCreateActivity(name);
+      if (activity.id == row.activityId) {
+        return (activity: activity, undo: null);
+      }
+
+      await (_db.update(
+        _db.timeEntries,
+      )..where((t) => t.id.equals(entryId))).write(
+        TimeEntriesCompanion(
+          activityId: Value(activity.id),
+          updatedAt: Value(toMillis(now)),
+        ),
+      );
+
+      final entryUndo = _undoToken(
+        'Activity changed',
+        snapshots: <TimeEntryRow>[row],
+      );
+      // Undoing a relabel that created an activity has to take the activity
+      // back out too, or the timeline returns to how it was while the activity
+      // list does not.
+      final created = existed ? null : activity.id;
+      return (
+        activity: activity,
+        undo: UndoToken('Activity changed', () async {
+          await entryUndo.undo();
+          if (created != null) await _deleteActivityIfUnused(created);
+        }),
+      );
+    });
+  }
+
   /// Soft delete. The gap it leaves is data, not an error: neighbours are never
   /// stretched to cover it (SPEC §4.7, §6.8).
   Future<UndoToken> delete(String entryId) async => _db.transaction(() async {
@@ -475,9 +668,134 @@ class TimelineWriter {
     return _undoToken('Deleted entry', snapshots: <TimeEntryRow>[row]);
   });
 
+  /// Fills a gap with a new entry covering exactly `[startUtc, endUtc)`
+  /// (SPEC §8.2).
+  ///
+  /// Not a variant of start: nothing begins now, nothing is stopped, and the
+  /// running entry is left alone. It is the one way to add time that already
+  /// passed, which is why it is checked against §4 like everything else rather
+  /// than trusted to be in a gap because the UI said so.
+  Future<UndoToken> insertEntry({
+    required String name,
+    required DateTime startUtc,
+    required DateTime endUtc,
+  }) async {
+    if (!Activity.isValidName(name)) {
+      throw ArgumentError.value(name, 'name', 'not a usable activity name');
+    }
+    return _db.transaction(() async {
+      final now = _clock.nowUtc();
+      if (!endUtc.isAfter(startUtc)) {
+        throw const InvariantViolation(
+          'positiveDuration',
+          'An entry has to end after it starts.',
+        );
+      }
+      if (startUtc.isAfter(now)) {
+        throw const InvariantViolation(
+          'noFutureStarts',
+          'An entry cannot start in the future.',
+        );
+      }
+
+      final activity = await _findOrCreateActivity(name);
+      final id = _ids.next();
+      await _db
+          .into(_db.timeEntries)
+          .insert(
+            TimeEntriesCompanion.insert(
+              id: id,
+              activityId: activity.id,
+              startUtc: toMillis(startUtc),
+              endUtc: Value(toMillis(endUtc)),
+              tzName: await _zone(),
+              createdAt: toMillis(now),
+              updatedAt: toMillis(now),
+            ),
+          );
+      await _validateAround(id, now);
+      return _undoToken(
+        'Added entry',
+        snapshots: const <TimeEntryRow>[],
+        createdIds: <String>[id],
+      );
+    });
+  }
+
+  // ----------------------------------------------------------------- backup
+
+  /// Applies a merge plan, or nothing at all (SPEC §8.6, §4.6).
+  ///
+  /// One transaction for the whole file: an import that failed halfway would
+  /// leave a timeline that is neither the old one nor the new one, and §4.6
+  /// does not make an exception for imports. A plan that was rejected by
+  /// `planMerge` is refused here too rather than trusted to have been checked
+  /// by the UI.
+  Future<void> applyBackup(BackupPlan plan) async {
+    if (!plan.isApplicable) {
+      throw InvariantViolation('importWouldBreakTimeline', plan.rejection!);
+    }
+    await _db.transaction(() async {
+      // Deleted wholesale rather than upserted row by row: the plan already
+      // contains the merged result, so anything still here that is not in it
+      // was removed by the merge.
+      await _db.delete(_db.timeEntries).go();
+      await _db.delete(_db.activities).go();
+
+      for (final activity in plan.activitiesToWrite) {
+        await _db
+            .into(_db.activities)
+            .insert(
+              ActivitiesCompanion.insert(
+                id: activity.id,
+                name: activity.name,
+                nameKey: activity.nameKey,
+                colorSeed: activity.colorSeed,
+                archived: Value(activity.archived ? 1 : 0),
+                createdAt: toMillis(activity.createdAt),
+                updatedAt: toMillis(activity.updatedAt),
+              ),
+            );
+      }
+      for (final entry in plan.entriesToWrite) {
+        await _db
+            .into(_db.timeEntries)
+            .insert(
+              TimeEntriesCompanion.insert(
+                id: entry.id,
+                activityId: entry.activityId,
+                note: Value(entry.note),
+                startUtc: toMillis(entry.startUtc),
+                endUtc: Value(
+                  entry.endUtc == null ? null : toMillis(entry.endUtc!),
+                ),
+                tzName: entry.tzName,
+                createdAt: toMillis(entry.createdAt),
+                updatedAt: toMillis(entry.updatedAt),
+                deletedAt: Value(
+                  entry.deletedAt == null ? null : toMillis(entry.deletedAt!),
+                ),
+              ),
+            );
+      }
+    });
+  }
+
+  /// Everything, gone (SPEC §8.6). Not undoable, which is why the UI asks you
+  /// to type the word first.
+  Future<void> deleteAllData() => _db.transaction(() async {
+    await _db.delete(_db.timeEntries).go();
+    await _db.delete(_db.activities).go();
+  });
+
   // ------------------------------------------------------------- activities
 
-  Future<Activity> renameActivity({
+  /// Renames, or merges when the name is already taken (SPEC §6.7).
+  ///
+  /// Returns an undo token, because §6.7 says both of these are undoable — and
+  /// a merge is the least reversible thing in the app: it re-points every entry
+  /// of one activity onto another and then drops the empty one.
+  Future<({Activity activity, UndoToken undo})> renameActivity({
     required String activityId,
     required String name,
   }) async {
@@ -487,13 +805,20 @@ class TimelineWriter {
     return _db.transaction(() async {
       final now = _clock.nowUtc();
       final key = Activity.keyFor(name);
+      final before = await (_db.select(
+        _db.activities,
+      )..where((t) => t.id.equals(activityId))).getSingle();
       final existing = await (_db.select(
         _db.activities,
       )..where((t) => t.nameKey.equals(key))).getSingleOrNull();
 
       if (existing != null && existing.id != activityId) {
         // Merging: re-point every entry, then drop the now-empty activity
-        // (SPEC §6.7).
+        // (SPEC §6.7). The ids are read first so the undo knows which entries
+        // to put back — the ones that moved, not every entry of the target.
+        final moved = await (_db.select(
+          _db.timeEntries,
+        )..where((t) => t.activityId.equals(activityId))).get();
         await (_db.update(
           _db.timeEntries,
         )..where((t) => t.activityId.equals(activityId))).write(
@@ -505,7 +830,25 @@ class TimelineWriter {
         await (_db.delete(
           _db.activities,
         )..where((t) => t.id.equals(activityId))).go();
-        return existing.toDomain();
+
+        return (
+          activity: existing.toDomain(),
+          undo: UndoToken('Merged ${before.name}', () async {
+            await _db.transaction(() async {
+              await _db.into(_db.activities).insert(before);
+              for (final row in moved) {
+                await (_db.update(
+                  _db.timeEntries,
+                )..where((t) => t.id.equals(row.id))).write(
+                  TimeEntriesCompanion(
+                    activityId: Value(row.activityId),
+                    updatedAt: Value(row.updatedAt),
+                  ),
+                );
+              }
+            });
+          }),
+        );
       }
 
       await (_db.update(
@@ -517,15 +860,33 @@ class TimelineWriter {
           updatedAt: Value(toMillis(now)),
         ),
       );
-      return (await _requireActivity(activityId)).copyWith(name: name.trim());
+      return (
+        activity: (await _requireActivity(activityId))
+            .copyWith(name: name.trim()),
+        undo: UndoToken('Renamed ${before.name}', () async {
+          await (_db.update(
+            _db.activities,
+          )..where((t) => t.id.equals(activityId))).write(
+            ActivitiesCompanion(
+              name: Value(before.name),
+              nameKey: Value(before.nameKey),
+              updatedAt: Value(before.updatedAt),
+            ),
+          );
+        }),
+      );
     });
   }
 
-  Future<void> setActivityColor({
+  /// Recolours an activity, undoably (SPEC §6.7).
+  Future<UndoToken> setActivityColor({
     required String activityId,
     required int colorSeed,
   }) async {
     final now = _clock.nowUtc();
+    final before = await (_db.select(
+      _db.activities,
+    )..where((t) => t.id.equals(activityId))).getSingle();
     await (_db.update(
       _db.activities,
     )..where((t) => t.id.equals(activityId))).write(
@@ -534,15 +895,27 @@ class TimelineWriter {
         updatedAt: Value(toMillis(now)),
       ),
     );
+    return UndoToken('Recoloured ${before.name}', () async {
+      await (_db.update(
+        _db.activities,
+      )..where((t) => t.id.equals(activityId))).write(
+        ActivitiesCompanion(
+          colorSeed: Value(before.colorSeed),
+          updatedAt: Value(before.updatedAt),
+        ),
+      );
+    });
   }
 
   // ----------------------------------------------------------------- helpers
 
+  Future<ActivityRow?> _findActivityByKey(String key) => (_db.select(
+    _db.activities,
+  )..where((t) => t.nameKey.equals(key))).getSingleOrNull();
+
   Future<Activity> _findOrCreateActivity(String name) async {
     final key = Activity.keyFor(name);
-    final existing = await (_db.select(
-      _db.activities,
-    )..where((t) => t.nameKey.equals(key))).getSingleOrNull();
+    final existing = await _findActivityByKey(key);
     if (existing != null) return existing.toDomain();
 
     final now = _clock.nowUtc();
@@ -587,6 +960,21 @@ class TimelineWriter {
         ),
       );
 
+  /// Drops an activity nothing points at any more.
+  ///
+  /// Checked rather than assumed: between a relabel and its undo the activity
+  /// may have been used by something else, and dropping it then would break the
+  /// `activity_id` foreign key.
+  Future<void> _deleteActivityIfUnused(String activityId) async {
+    final used = await (_db.select(
+      _db.timeEntries,
+    )..where((t) => t.activityId.equals(activityId))).get();
+    if (used.isNotEmpty) return;
+    await (_db.delete(
+      _db.activities,
+    )..where((t) => t.id.equals(activityId))).go();
+  }
+
   Future<void> _softDelete(String entryId, DateTime now) =>
       (_db.update(_db.timeEntries)..where((t) => t.id.equals(entryId))).write(
         TimeEntriesCompanion(
@@ -629,12 +1017,21 @@ class TimelineWriter {
         .entryStartingAfter(entryId, toMillis(entry.startUtc))
         .getSingleOrNull();
     final running = await _db.runningEntry().get();
-    checkNeighbourhood(<TimeEntry>[
-      entry,
-      ?prev?.toDomain(),
-      ?next?.toDomain(),
-      ...running.map((r) => r.toDomain()).where((r) => r.id != entry.id),
-    ], now: now);
+    // Keyed by id rather than concatenated, because the same row can arrive
+    // twice: when `next` *is* the running entry it comes in as both. Two copies
+    // of one running entry read as two running entries to §4.1, and as an
+    // overlap to §4.2, which made correcting the last finished entry's
+    // boundaries impossible while anything was running (SPEC §14.5).
+    final neighbourhood = <String, TimeEntry>{
+      for (final candidate in <TimeEntry>[
+        entry,
+        ?prev?.toDomain(),
+        ?next?.toDomain(),
+        ...running.map((r) => r.toDomain()),
+      ])
+        candidate.id: candidate,
+    };
+    checkNeighbourhood(neighbourhood.values, now: now);
   }
 
   /// Writes [row] back exactly as it was, nulls included.

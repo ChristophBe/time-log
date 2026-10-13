@@ -199,6 +199,141 @@ void main() {
     expect(find.text('↑'), findsOneWidget);
   });
 
+  testWidgets('every number on the day is set in the mono (SPEC §9.8)', (
+    tester,
+  ) async {
+    // The two-voice rule is easy to apply to a new widget and easy to forget
+    // on an old one; four of these were silently in the sans for a while.
+    final h = WidgetHarness(
+      now: now,
+      activities: activities,
+      dayWindows: utcDays(),
+      entries: <TimeEntry>[
+        entryFor(
+          id: 'e1',
+          activityId: specs.id,
+          start: DateTime.utc(2026, 3, 10, 13),
+          end: DateTime.utc(2026, 3, 10, 14),
+        ),
+      ],
+    );
+    await h.pump(tester, const TodayScreen());
+
+    for (final text in <String>['13:00', '13:00 – 14:00   1 h', '15:32']) {
+      final finder = find.text(text);
+      if (finder.evaluate().isEmpty) continue;
+      expect(
+        tester.widget<Text>(finder.first).style?.fontFamily,
+        'GeistMono',
+        reason: '"$text" is a number and belongs in the other voice',
+      );
+    }
+  });
+
+  group('the running entry reads as unfinished (SPEC §8.2)', () {
+    /// A running entry started [ago] before now, on a UTC day.
+    WidgetHarness runningFor(Duration ago) => WidgetHarness(
+      now: now,
+      activities: activities,
+      dayWindows: utcDays(),
+      running: entryFor(
+        id: 'r1',
+        activityId: specs.id,
+        start: now.subtract(ago),
+      ),
+      entries: <TimeEntry>[
+        entryFor(id: 'r1', activityId: specs.id, start: now.subtract(ago)),
+      ],
+    );
+
+    testWidgets('its bottom edge meets the now-line', (tester) async {
+      await runningFor(const Duration(hours: 2))
+          .pump(tester, const TodayScreen());
+
+      final block = tester.getRect(find.byType(EntryBlock));
+      final line = tester.getRect(find.byType(NowLine));
+      expect(
+        block.bottom,
+        closeTo(line.center.dy, 1.5),
+        reason:
+            'the block ends at "now", so it has to end where the now-line is '
+            'drawn -- and the line is at the centre of its own row',
+      );
+    });
+
+    testWidgets('a just-started entry still does not overshoot now', (
+      tester,
+    ) async {
+      // Two minutes is under the 18px minimum block height, so the minimum has
+      // to be spent upwards: drawing it downwards would paint time that has
+      // not happened.
+      await runningFor(const Duration(minutes: 2))
+          .pump(tester, const TodayScreen());
+
+      final block = tester.getRect(find.byType(EntryBlock));
+      final line = tester.getRect(find.byType(NowLine));
+      expect(block.height, 18, reason: 'still visible and hittable');
+      expect(block.bottom, closeTo(line.center.dy, 1.5));
+    });
+
+    testWidgets('its bottom corners are square, its top corners are not', (
+      tester,
+    ) async {
+      await runningFor(const Duration(hours: 2))
+          .pump(tester, const TodayScreen());
+
+      final shape =
+          tester
+                  .widget<Material>(
+                    find.descendant(
+                      of: find.byType(EntryBlock),
+                      matching: find.byType(Material),
+                    ),
+                  )
+                  .shape!
+              as RoundedRectangleBorder;
+      final radius = shape.borderRadius as BorderRadius;
+      expect(
+        radius.bottomLeft,
+        Radius.zero,
+        reason: 'a rounded cap would say the entry ended there',
+      );
+      expect(radius.bottomRight, Radius.zero);
+      expect(radius.topLeft, isNot(Radius.zero));
+    });
+
+    testWidgets('a finished entry keeps all four corners', (tester) async {
+      final h = WidgetHarness(
+        now: now,
+        activities: activities,
+        dayWindows: utcDays(),
+        entries: <TimeEntry>[
+          entryFor(
+            id: 'e1',
+            activityId: specs.id,
+            start: DateTime.utc(2026, 3, 10, 13),
+            end: DateTime.utc(2026, 3, 10, 14),
+          ),
+        ],
+      );
+      await h.pump(tester, const TodayScreen());
+
+      final shape =
+          tester
+                  .widget<Material>(
+                    find.descendant(
+                      of: find.byType(EntryBlock),
+                      matching: find.byType(Material),
+                    ),
+                  )
+                  .shape!
+              as RoundedRectangleBorder;
+      final radius = shape.borderRadius as BorderRadius;
+      expect(radius.bottomLeft, isNot(Radius.zero));
+      expect(radius.topLeft, isNot(Radius.zero));
+    });
+  });
+
   group('DST (SPEC §5.3)', () {
     testWidgets('a 23-hour day renders 23 hour labels', (tester) async {
       final h = WidgetHarness(
@@ -251,10 +386,10 @@ void main() {
       await h.pump(tester, const TodayScreen());
 
       final button = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.today),
+        find.widgetWithIcon(IconButton, Icons.today_outlined),
       );
       expect(button.onPressed, isNull);
-      expect(find.textContaining('Today,'), findsOneWidget);
+      expect(find.textContaining('Today'), findsOneWidget);
     });
 
     testWidgets('the previous-day button moves the date header', (
@@ -270,9 +405,9 @@ void main() {
       await tester.tap(find.byTooltip('Previous day'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Today,'), findsNothing);
+      expect(find.textContaining('Today'), findsNothing);
       final button = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.today),
+        find.widgetWithIcon(IconButton, Icons.today_outlined),
       );
       expect(button.onPressed, isNotNull);
     });
@@ -290,7 +425,7 @@ void main() {
       await tester.tap(find.byTooltip('Today'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Today,'), findsOneWidget);
+      expect(find.textContaining('Today'), findsOneWidget);
     });
   });
 

@@ -1,0 +1,11 @@
+# Actions only. Dart dependency bumps are deliberately left manual: they move
+# pubspec.lock, which means regenerating code and re-running the goldens, and
+# that is a judgement call rather than a chore.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'ci:'

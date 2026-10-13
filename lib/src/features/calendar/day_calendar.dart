@@ -1,17 +1,25 @@
+import 'dart:math' as math;
+
+import 'package:flutter/cupertino.dart' show CupertinoScrollbar;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/design.dart';
+import '../../app/platform_style.dart';
+import '../../app/theme.dart';
 import '../../core/clock.dart';
 import '../../core/formatters.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
 import '../../domain/models/time_entry.dart';
+import '../../domain/timeline/clustering.dart';
 import '../../domain/timeline/day_timeline.dart';
 import '../../domain/timeline/invariants.dart';
 import '../../domain/timeline/timeline_math.dart';
 import '../../domain/timeline_writer.dart';
+import 'fill_gap_sheet.dart';
 import '../today/action_feedback.dart';
 import '../today/resume_action.dart';
 import '../today/today_providers.dart';
@@ -52,10 +60,20 @@ class _DragState {
 /// The day as a vertical timeline (SPEC §8.2), with boundaries draggable per
 /// SPEC §7.
 class DayCalendar extends ConsumerStatefulWidget {
-  const DayCalendar({this.onEntryTap, this.selectedEntryId, super.key});
+  const DayCalendar({
+    this.onEntryTap,
+    this.selectedEntryId,
+    this.topInset = 0,
+    super.key,
+  });
 
   final void Function(TimeEntry entry)? onEntryTap;
   final String? selectedEntryId;
+
+  /// Empty space above midnight, so that the day can scroll *under* a floating
+  /// header instead of starting below it (SPEC §9.8). Outside the axis's own
+  /// box, so none of the geometry in `CalendarMetrics` knows about it.
+  final double topInset;
 
   @override
   ConsumerState<DayCalendar> createState() => DayCalendarState();
@@ -67,6 +85,9 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
   bool _hasScrolledToStart = false;
   double _zoomAtGestureStart = 0;
   _DragState? _drag;
+
+  /// Which cluster of too-short entries has been opened, if any (SPEC §8.2).
+  String? _expandedCluster;
 
   @override
   void dispose() {
@@ -85,7 +106,9 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
         ? now
         : (ref.read(dayTimelineProvider).segments.firstOrNull?.startUtc ??
               window.startUtc);
-    final target = (metrics.offsetFor(focus) - 120).clamp(
+    // Plus the inset, because the content now starts that far down: without it
+    // the first scroll would land the now-line a header's height too low.
+    final target = (metrics.offsetFor(focus) - 120 + widget.topInset).clamp(
       0.0,
       _scrollController.position.maxScrollExtent,
     );
@@ -95,7 +118,7 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
   double _gutterWidth(BuildContext context) {
     // Grows with the text scale so hour labels are never clipped (SPEC §10.2).
     final scaled = MediaQuery.textScalerOf(context).scale(12);
-    return (scaled * 4.2).clamp(52.0, 140.0);
+    return (scaled * 4.2).clamp(Metrics.gutterBase, Metrics.gutterMax);
   }
 
   // ------------------------------------------------------------------ dragging
@@ -200,6 +223,28 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
     }
   }
 
+  /// SPEC §8.2: a gap is tappable, and filling it covers exactly the gap.
+  Future<void> _fillGap(DateTime startUtc, DateTime endUtc, bool use24h) async {
+    final name = await showFillGapSheet(
+      context,
+      startLocal: startUtc.toLocal(),
+      endLocal: endUtc.toLocal(),
+      duration: endUtc.difference(startUtc),
+      use24h: use24h,
+    );
+    if (name == null || !mounted) return;
+    try {
+      final undo = await ref
+          .read(timelineWriterProvider)
+          .insertEntry(name: name, startUtc: startUtc, endUtc: endUtc);
+      if (!mounted) return;
+      showUndoableFeedback(context, message: 'Added $name', undo: undo);
+    } on InvariantViolation catch (error) {
+      if (!mounted) return;
+      showUndoableFeedback(context, message: error.detail, undo: null);
+    }
+  }
+
   Future<void> _delete(TimeEntry entry) async {
     final undo = await ref.read(timelineWriterProvider).delete(entry.id);
     if (!mounted) return;
@@ -265,10 +310,13 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
             .read(calendarZoomProvider.notifier)
             .setTo(_zoomAtGestureStart * details.verticalScale);
       },
-      child: Scrollbar(
+      // Each platform draws its own: Cupertino's is thinner, rounder and fades
+      // the way an Apple user expects (SPEC §9.8).
+      child: _PlatformScrollbar(
         controller: _scrollController,
         child: SingleChildScrollView(
           controller: _scrollController,
+          padding: EdgeInsets.only(top: widget.topInset),
           // Dragging a boundary must not also scroll the view.
           physics: _drag == null ? null : const NeverScrollableScrollPhysics(),
           child: SizedBox(
@@ -276,7 +324,7 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
             height: metrics.totalHeight,
             child: Stack(
               children: <Widget>[
-                _HourRules(
+                _Axis(
                   metrics: metrics,
                   gutter: gutter,
                   use24h: settings.use24HourClock,
@@ -285,43 +333,86 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
                   Positioned(
                     top: metrics.offsetFor(gap.startUtc),
                     left: gutter,
-                    right: 8,
+                    right: Insets.sm,
                     height: metrics.renderedHeightFor(gap.duration),
+                    // A gap only takes taps once it is big enough to be a legal
+                    // target (SPEC §10.2). Below that the honest answer is to
+                    // zoom in — which is already the answer for short entries
+                    // (SPEC §8.2) — rather than to offer a four-pixel button.
                     child: GapBlock(
                       duration: gap.duration,
                       startLocal: gap.startUtc.toLocal(),
                       endLocal: gap.endUtc.toLocal(),
                       use24h: settings.use24HourClock,
+                      onTap:
+                          widget.onEntryTap == null ||
+                              metrics.renderedHeightFor(gap.duration) <
+                                  kMinTapTarget
+                          ? null
+                          : () => _fillGap(
+                              gap.startUtc,
+                              gap.endUtc,
+                              settings.use24HourClock,
+                            ),
                     ),
                   ),
-                for (final segment in timeline.segments)
-                  _positionedSegment(
-                    segment: segment,
-                    metrics: metrics,
-                    preview: preview,
-                    now: now,
-                    gutter: gutter,
-                    settings: settings,
-                    step: step,
-                    activities: activities,
-                  ),
+                for (final cluster in clusterSegments(
+                  timeline.segments,
+                  pixelsPerMinute: metrics.pixelsPerMinute,
+                  minHeight: metrics.minBlockHeight,
+                ))
+                  if (!cluster.isCluster || _expandedCluster == cluster.id)
+                    for (final segment in cluster.segments)
+                      _positionedSegment(
+                        segment: segment,
+                        metrics: metrics,
+                        preview: preview,
+                        now: now,
+                        gutter: gutter,
+                        settings: settings,
+                        step: step,
+                        activities: activities,
+                      )
+                  else
+                    Positioned(
+                      top: metrics.offsetFor(cluster.first.startUtc),
+                      left: gutter,
+                      right: Insets.sm,
+                      height: metrics.minBlockHeight,
+                      child: _ShortEntriesChip(
+                        count: cluster.segments.length,
+                        onTap: () =>
+                            setState(() => _expandedCluster = cluster.id),
+                      ),
+                    ),
                 if (metrics.window.contains(now))
                   Positioned(
-                    top: metrics.offsetFor(now) - 1,
+                    top: metrics.offsetFor(now),
                     left: 0,
-                    right: 8,
-                    child: NowLine(
-                      label: formatTimeOfDay(
-                        now.toLocal(),
-                        use24h: settings.use24HourClock,
+                    right: Insets.sm,
+                    // The line sits at the centre of the row that carries the
+                    // pill, so the row has to be lifted by half its own height
+                    // for the line to land on the instant. Half of *its own*
+                    // height, which only it knows: the pill grows with the text
+                    // scale. Positioned it by the row's top instead, and the
+                    // line drew itself nine pixels into the future — the same
+                    // mistake the hour rules used to make, and the reason the
+                    // running block could never quite reach it.
+                    child: FractionalTranslation(
+                      translation: const Offset(0, -0.5),
+                      child: NowLine(
+                        label: formatTimeOfDay(
+                          now.toLocal(),
+                          use24h: settings.use24HourClock,
+                        ),
+                        gutterWidth: gutter,
                       ),
-                      gutterWidth: gutter,
                     ),
                   ),
                 if (preview != null)
                   Positioned(
-                    top: metrics.offsetFor(preview.applied) - 10,
-                    left: gutter,
+                    top: metrics.offsetFor(preview.applied) - 12,
+                    left: Insets.sm,
                     child: _DragReadout(
                       label: formatTimeOfDay(
                         preview.applied.toLocal(),
@@ -352,11 +443,21 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
     final entry = segment.entry;
     final canEdit = widget.onEntryTap != null;
 
+    // A block that has not ended is pinned by its *bottom* edge, so that it
+    // always meets the now-line. Pinning the top instead lets the minimum
+    // rendered height (SPEC §8.2) push a just-started entry past now and draw
+    // time that has not happened yet; this way the minimum is spent upwards,
+    // where no line contradicts it.
+    final openEnded = segment.isRunning || segment.continuesAfter;
+    final top = openEnded
+        ? math.max(0.0, metrics.offsetFor(times.end) - height)
+        : metrics.offsetFor(times.start);
+
     return Positioned(
       key: ValueKey<String>('slot-${entry.id}'),
-      top: metrics.offsetFor(times.start),
+      top: top,
       left: gutter,
-      right: 8,
+      right: Insets.sm,
       height: height,
       child: GestureDetector(
         // The EntryBlock below already publishes the block's semantics, including
@@ -485,6 +586,66 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
       );
 }
 
+/// Several entries too short to draw apart, stood in for by one chip
+/// (SPEC §8.2).
+///
+/// Without it the shorter ones are drawn *under* their neighbours — the minimum
+/// block height makes them overlap rather than shrink — and become unreachable.
+/// Tapping draws them individually; zooming in un-clusters them on its own,
+/// because at a larger scale they no longer collide.
+class _ShortEntriesChip extends StatelessWidget {
+  const _ShortEntriesChip({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: '$count short entries',
+      hint: 'Double tap to show them',
+      child: Material(
+        color: scheme.surfaceContainerHighest,
+        shape: const RoundedRectangleBorder(borderRadius: Radii.smAll),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ExcludeSemantics(
+                child: Text(
+                  '$count short entries',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The scrollbar of whichever design system is in charge.
+class _PlatformScrollbar extends StatelessWidget {
+  const _PlatformScrollbar({required this.controller, required this.child});
+
+  final ScrollController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => PlatformStyle.from(context).isApple
+      ? CupertinoScrollbar(controller: controller, child: child)
+      : Scrollbar(controller: controller, child: child);
+}
+
 /// The live time under the finger while dragging a boundary.
 class _DragReadout extends StatelessWidget {
   const _DragReadout({required this.label});
@@ -497,12 +658,15 @@ class _DragReadout extends StatelessWidget {
     return IgnorePointer(
       child: Material(
         color: scheme.inverseSurface,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: Radii.pill,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Insets.sm,
+            vertical: Insets.xs / 2,
+          ),
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelMedium
+            style: AppType.numeric(Theme.of(context).textTheme.labelMedium)
                 ?.copyWith(color: scheme.onInverseSurface),
           ),
         ),
@@ -511,8 +675,19 @@ class _DragReadout extends StatelessWidget {
   }
 }
 
-class _HourRules extends StatelessWidget {
-  const _HourRules({
+/// The hour axis: the labels down the gutter, the rules across the day, and
+/// the spine that separates the two.
+///
+/// The rules are painted rather than laid out as a row per hour. A `Positioned`
+/// row centres its hairline inside its own text height, which put every
+/// gridline about seven pixels below the instant it claimed to mark while the
+/// blocks beside it were positioned exactly -- so the axis and the day quietly
+/// disagreed. A painter puts the line on the instant.
+///
+/// The labels stay real `Text` widgets rather than painted glyphs, so they
+/// scale with the platform text size like everything else (SPEC §10.2).
+class _Axis extends StatelessWidget {
+  const _Axis({
     required this.metrics,
     required this.gutter,
     required this.use24h,
@@ -524,49 +699,114 @@ class _HourRules extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final colors = AppColors.from(context);
+    // The axis is nothing but numbers, so it is set in the mono (SPEC §9.8).
+    final style = AppType.numeric(Theme.of(context).textTheme.labelSmall)
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    // Enough to centre the label on its rule. The rules stop at the gutter, so
+    // a label can sit level with its line without crossing it.
+    final labelHeight =
+        MediaQuery.textScalerOf(context).scale(style?.fontSize ?? 11) * 1.4;
+
     return Stack(
       children: <Widget>[
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _AxisPainter(
+              metrics: metrics,
+              gutter: gutter,
+              rule: colors.axisRule,
+              faintRule: colors.axisRuleFaint,
+              spine: colors.gutterSpine,
+            ),
+          ),
+        ),
         for (final tick in metrics.hourTicks())
           Positioned(
-            top: metrics.offsetFor(tick),
+            // Clamped so midnight's label stays on screen instead of being
+            // half cut off by the top of the day.
+            top: (metrics.offsetFor(tick) - labelHeight / 2).clamp(
+              0.0,
+              metrics.totalHeight - labelHeight,
+            ),
             left: 0,
-            right: 0,
+            width: gutter,
+            height: labelHeight,
             child: ExcludeSemantics(
-              child: Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: gutter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Text(
-                        formatTimeOfDay(tick.toLocal(), use24h: use24h),
-                        textAlign: TextAlign.right,
-                        maxLines: 1,
-                        style: Theme.of(context).textTheme.labelSmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    ),
+              child: Padding(
+                padding: const EdgeInsets.only(right: Insets.sm),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    formatTimeOfDay(tick.toLocal(), use24h: use24h),
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    style: style,
                   ),
-                  Expanded(
-                    child: Container(height: 1, color: scheme.outlineVariant),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        if (metrics.showsHalfHours)
-          for (final tick in metrics.hourTicks())
-            Positioned(
-              top: metrics.offsetFor(tick.add(const Duration(minutes: 30))),
-              left: gutter,
-              right: 0,
-              child: Container(
-                height: 1,
-                color: scheme.surfaceContainerHighest,
-              ),
-            ),
       ],
     );
   }
+}
+
+class _AxisPainter extends CustomPainter {
+  const _AxisPainter({
+    required this.metrics,
+    required this.gutter,
+    required this.rule,
+    required this.faintRule,
+    required this.spine,
+  });
+
+  final CalendarMetrics metrics;
+  final double gutter;
+  final Color rule;
+  final Color faintRule;
+  final Color spine;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hourPaint = Paint()
+      ..color = rule
+      ..strokeWidth = Strokes.hairline;
+    final halfPaint = Paint()
+      ..color = faintRule
+      ..strokeWidth = Strokes.hairline;
+
+    for (final tick in metrics.hourTicks()) {
+      final y = metrics.offsetFor(tick) + 0.5;
+      canvas.drawLine(Offset(gutter, y), Offset(size.width, y), hourPaint);
+      if (!metrics.showsHalfHours) continue;
+      final half =
+          metrics.offsetFor(tick.add(const Duration(minutes: 30))) + 0.5;
+      canvas.drawLine(
+        Offset(gutter, half),
+        Offset(size.width, half),
+        halfPaint,
+      );
+    }
+
+    // The gutter's own edge: it gives the day a spine to hang off, and makes
+    // the blocks read as placed against the axis rather than floating near it.
+    final spinePaint = Paint()
+      ..color = spine
+      ..strokeWidth = Strokes.hairline;
+    canvas.drawLine(
+      Offset(gutter - 0.5, 0),
+      Offset(gutter - 0.5, size.height),
+      spinePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_AxisPainter old) =>
+      old.metrics.pixelsPerHour != metrics.pixelsPerHour ||
+      old.metrics.window != metrics.window ||
+      old.gutter != gutter ||
+      old.rule != rule ||
+      old.faintRule != faintRule ||
+      old.spine != spine;
 }

@@ -3,8 +3,11 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../domain/backup/json_backup.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/time_entry.dart';
+import '../../domain/timeline/day_rollover.dart';
+import '../../domain/timeline/day_window.dart';
 import '../db/database.dart';
 import '../db/database_provider.dart';
 import '../db/mappers.dart';
@@ -75,6 +78,54 @@ class TimeEntryRepository {
         .entryStartingAfter(entryId, instant)
         .getSingleOrNull();
     return (previous: previous?.toDomain(), next: next?.toDomain());
+  }
+
+  /// When the run [running] belongs to actually began, following back through
+  /// the entries SPEC §6.11 cut apart at midnight (SPEC §8.1).
+  ///
+  /// Walks the database rather than the visible day for the same reason
+  /// [neighboursOf] does: every hop of this chain is across a midnight by
+  /// definition. One hop per day crossed, so the cost is bounded by how long
+  /// the clock has been left running and not by the size of the timeline.
+  Future<DateTime> runStartOf(
+    TimeEntry running, {
+    required DayWindowCalculator days,
+  }) async {
+    var earliest = running;
+    while (true) {
+      final previous = (await neighboursOf(
+        earliest.id,
+        earliest.startUtc,
+      )).previous;
+      if (previous == null) break;
+      // Defensive: a chain that did not move backwards would spin forever, and
+      // this walk runs on every timeline change.
+      if (!previous.startUtc.isBefore(earliest.startUtc)) break;
+      if (!isRolloverContinuation(
+        entry: earliest,
+        previous: previous,
+        days: days,
+      )) {
+        break;
+      }
+      earliest = previous;
+    }
+    return earliest.startUtc;
+  }
+
+  /// Everything the database holds, tombstones included (SPEC §8.6).
+  ///
+  /// Deleted rows are part of a backup on purpose: without them a restore would
+  /// resurrect everything you ever deleted, and a merge would have no way to
+  /// know the deletion was the newer fact.
+  Future<({List<BackupActivity> activities, List<BackupEntry> entries})>
+  readForBackup() async {
+    final activities = await _db.select(_db.activities).get();
+    final entries = await _db.select(_db.timeEntries).get();
+    return (
+      activities: activities.map((row) => row.toBackup()).toList(),
+      entries: entries.map((row) => row.toBackup()).toList(),
+    );
   }
 
   Future<TimeEntry?> lastFinishedEntry() async {

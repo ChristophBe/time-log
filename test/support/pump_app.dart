@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:time_log/src/app/theme.dart';
@@ -15,6 +16,14 @@ import 'package:time_log/src/features/entry/entry_providers.dart';
 import 'package:time_log/src/features/today/today_providers.dart';
 
 class MockTimelineWriter extends Mock implements TimelineWriter {}
+
+/// Settings live in the database (see `SettingsRepository`), so a screen that
+/// writes one would otherwise open a real one inside a widget test.
+class MockSettingsRepository extends Mock implements SettingsRepository {}
+
+/// The read side, for screens that query it directly rather than through one
+/// of the day providers — the export sheet asks for an arbitrary range.
+class MockTimeEntryRepository extends Mock implements TimeEntryRepository {}
 
 /// Widget tests run against fixed provider state and a mock writer rather than a
 /// real database.
@@ -33,6 +42,8 @@ class WidgetHarness {
     this.suggestions = const <ActivitySuggestion>[],
     this.lastFinished,
     this.dayWindows,
+    this.runStart,
+    this.runningStream,
     this.neighbours = (previous: null, next: null),
   }) : clock = FakeClock(now ?? DateTime.utc(2026, 3, 10, 14, 32));
 
@@ -48,18 +59,48 @@ class WidgetHarness {
   /// time zone of the machine running the tests.
   final DayWindowCalculator? dayWindows;
 
+  /// A running entry that *changes* while the tree stays mounted, for the one
+  /// thing a value stream cannot express: SPEC §6.11 cutting the entry at
+  /// midnight under a screen that is already on display. Replaces [running] as
+  /// the source of `runningEntryProvider` when it is given.
+  final Stream<TimeEntry?>? runningStream;
+
+  /// When the running entry's *run* began, which is earlier than the entry
+  /// itself once SPEC §6.11 has cut it at a midnight. Defaults to the running
+  /// entry's own start, which is the no-rollover case (SPEC §8.1).
+  final DateTime? runStart;
+
   /// The entries on either side of whichever entry a sheet is showing, which
   /// decide whether its boundaries are shared or free (SPEC §7.1).
   final EntryNeighbours neighbours;
 
   final MockTimelineWriter writer = MockTimelineWriter();
+  final MockSettingsRepository settingsRepository = MockSettingsRepository();
+  final MockTimeEntryRepository entryRepository = MockTimeEntryRepository();
+
+  /// The harness's suggestions, filtered the way SPEC §9.6 filters them.
+  List<ActivitySuggestion> _matching(String query) => query.isEmpty
+      ? suggestions
+      : suggestions
+            .where((s) => s.activity.nameKey.contains(Activity.keyFor(query)))
+            .toList();
 
   Future<void> pump(
     WidgetTester tester,
     Widget child, {
     TextScaler textScaler = TextScaler.noScaling,
     Size surfaceSize = const Size(420, 900),
+    Brightness brightness = Brightness.light,
+    List<Override> extraOverrides = const <Override>[],
+    RouterConfig<Object>? routerConfig,
   }) async {
+    when(() => settingsRepository.save(any())).thenAnswer((_) async {});
+    // Whatever this harness was given, for any range asked for. A test that
+    // cares about the range stubs it again itself.
+    when(() => entryRepository.watchEntriesInRange(any(), any()))
+        .thenAnswer((_) => Stream<List<TimeEntry>>.value(entries));
+    when(() => entryRepository.watchActivitiesById())
+        .thenAnswer((_) => Stream<Map<String, Activity>>.value(activities));
     await tester.binding.setSurfaceSize(surfaceSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -70,11 +111,13 @@ class WidgetHarness {
           if (dayWindows != null)
             dayWindowsProvider.overrideWithValue(dayWindows!),
           timelineWriterProvider.overrideWithValue(writer),
+          settingsRepositoryProvider.overrideWithValue(settingsRepository),
+          timeEntryRepositoryProvider.overrideWithValue(entryRepository),
           appSettingsProvider.overrideWith(
             (ref) => Stream<AppSettings>.value(settings),
           ),
           runningEntryProvider.overrideWith(
-            (ref) => Stream<TimeEntry?>.value(running),
+            (ref) => runningStream ?? Stream<TimeEntry?>.value(running),
           ),
           dayEntriesProvider.overrideWith(
             (ref) => Stream<List<TimeEntry>>.value(entries),
@@ -83,37 +126,59 @@ class WidgetHarness {
             (ref) => Stream<Map<String, Activity>>.value(activities),
           ),
           lastFinishedEntryProvider.overrideWith((ref) async => lastFinished),
+          runStartUtcProvider.overrideWith(
+            (ref) async => runStart ?? running?.startUtc,
+          ),
           entryNeighboursProvider.overrideWith((ref, id) async => neighbours),
           activitySuggestionsProvider.overrideWith(
-            (ref, query) => Stream<List<ActivitySuggestion>>.value(
-              query.isEmpty
-                  ? suggestions
-                  : suggestions
-                        .where(
-                          (s) => s.activity.nameKey.contains(
-                            Activity.keyFor(query),
-                          ),
-                        )
-                        .toList(),
-            ),
+            (ref, query) =>
+                Stream<List<ActivitySuggestion>>.value(_matching(query)),
           ),
+          // The entry sheet's picker ranks the same way but excludes the
+          // entry's own activity rather than the running one (SPEC §6.10).
+          relabelSuggestionsProvider.overrideWith((ref, args) {
+            final (excludeActivityId, query) = args;
+            return Stream<List<ActivitySuggestion>>.value(
+              _matching(query)
+                  .where((s) => s.activity.id != excludeActivityId)
+                  .toList(),
+            );
+          }),
           secondTickerProvider.overrideWith(
             (ref) => Stream<DateTime>.value(clock.nowUtc()),
           ),
           coarseTickerProvider.overrideWith(
             (ref) => Stream<DateTime>.value(clock.nowUtc()),
           ),
+          // Last, so a test can override providers this list does not cover.
+          // Overriding one of the above a second time is not allowed -- riverpod
+          // rejects a duplicate override outright -- which is why the values
+          // that have to *change* mid-test are parameters up there instead.
+          ...extraOverrides,
         ],
-        child: MaterialApp(
-          theme: buildAppTheme(Brightness.light),
-          // Override only the text scaler, inside MaterialApp, so the rest of
-          // the MediaQuery (notably the surface size) is preserved.
-          builder: (context, body) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: body!,
-          ),
-          home: child,
-        ),
+        child: routerConfig != null
+            ? MaterialApp.router(
+                routerConfig: routerConfig,
+                theme: buildAppTheme(brightness),
+                debugShowCheckedModeBanner: false,
+                builder: (context, body) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                  child: body!,
+                ),
+              )
+            : MaterialApp(
+                theme: buildAppTheme(brightness),
+                // Off, as in the real app: the banner sits over the header's
+                // trailing controls and would hide them in every golden.
+                debugShowCheckedModeBanner: false,
+                // Override only the text scaler, inside MaterialApp, so the rest of
+                // the MediaQuery (notably the surface size) is preserved.
+                builder: (context, body) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                  child: body!,
+                ),
+                home: child,
+              ),
       ),
     );
     await tester.pumpAndSettle();

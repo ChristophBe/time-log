@@ -1,4 +1,5 @@
 import '../models/time_entry.dart';
+import 'clipping.dart';
 import 'day_window.dart';
 
 /// Per-day tracked and untracked totals (SPEC §8.1).
@@ -37,14 +38,15 @@ DayTotals computeDayTotals({
   final byActivity = <String, Duration>{};
 
   for (final entry in entries) {
-    final start = entry.startUtc.isBefore(window.startUtc)
-        ? window.startUtc
-        : entry.startUtc;
-    var end = entry.endOr(now);
-    if (end.isAfter(window.endUtc)) end = window.endUtc;
-    if (!end.isAfter(start)) continue;
+    final span = clipToWindow(
+      entry,
+      from: window.startUtc,
+      to: window.endUtc,
+      now: now,
+    );
+    if (span == null) continue;
 
-    final slice = end.difference(start);
+    final slice = span.end.difference(span.start);
     tracked += slice;
     byActivity[entry.activityId] =
         (byActivity[entry.activityId] ?? Duration.zero) + slice;

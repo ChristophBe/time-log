@@ -31,6 +31,19 @@ void main() {
     return (h: h, a: entries[0], b: entries[1]);
   }
 
+  /// A day whose second entry is still **running**: A 09:00-10:00 and
+  /// B 10:00-running, with `now` at 12:00.
+  Future<({TimelineHarness h, TimeEntry a, TimeEntry b})>
+  oneFinishedThenRunning() async {
+    final h = TimelineHarness(startAt: DateTime.utc(2026, 3, 10, 9));
+    await h.writer.startByName(name: 'A');
+    h.clock.advance(const Duration(hours: 1));
+    await h.writer.startByName(name: 'B');
+    h.clock.advance(const Duration(hours: 2));
+    final entries = await h.entries();
+    return (h: h, a: entries[0], b: entries[1]);
+  }
+
   String shape(List<TimeEntry> entries) =>
       entries.map((e) => '${e.startUtc}-${e.endUtc}').join(' | ');
 
@@ -277,5 +290,109 @@ void main() {
     await undo.undo();
     expect(shape(await h.entries()), before);
     await h.close();
+  });
+
+  group('theBoundaryBeforeTheRunningEntryIsEditable', () {
+    // SPEC §14.5 for the entry you are most likely to want to fix: the one that
+    // just ended. Its own end is shared with the running entry's start, and
+    // §7.4 only makes the *running* entry's end uneditable -- everything about
+    // its predecessor is fair game.
+
+    test('its free start moves, by drag and by typing', () async {
+      final results = <String>[];
+
+      // Drag: the finger lands off-grid at 09:29 and snapping takes it to 09:30.
+      {
+        final setup = await oneFinishedThenRunning();
+        await setup.h.writer.moveBoundary(
+          entryId: setup.a.id,
+          edge: BoundaryEdge.start,
+          desired: DateTime.utc(2026, 3, 10, 9, 29),
+          snap: snap,
+        );
+        expect(
+          (await setup.h.running())!.id,
+          setup.b.id,
+          reason: 'editing its neighbour neither stopped it nor moved it',
+        );
+        results.add(shape(await setup.h.entries()));
+        await setup.h.close();
+      }
+
+      // Typing: the exact instant, unsnapped.
+      {
+        final setup = await oneFinishedThenRunning();
+        await setup.h.writer.setEntryTimes(
+          entryId: setup.a.id,
+          startUtc: DateTime.utc(2026, 3, 10, 9, 30),
+          endUtc: setup.a.endUtc,
+        );
+        results.add(shape(await setup.h.entries()));
+        await setup.h.close();
+      }
+
+      expect(
+        results.first,
+        contains('2026-03-10 09:30:00.000Z'),
+        reason: 'the start really did move',
+      );
+      expect(
+        results.toSet(),
+        hasLength(1),
+        reason: 'SPEC §14.5: both paths produce the same timeline',
+      );
+    });
+
+    test('the boundary it shares with the running entry moves both', () async {
+      final r = await oneFinishedThenRunning();
+      await r.h.writer.moveBoundary(
+        entryId: r.a.id,
+        edge: BoundaryEdge.end,
+        desired: DateTime.utc(2026, 3, 10, 10, 15),
+        snap: snap,
+      );
+
+      final entries = await r.h.entries();
+      expect(entries[0].endUtc, DateTime.utc(2026, 3, 10, 10, 15));
+      expect(
+        entries[1].startUtc,
+        entries[0].endUtc,
+        reason:
+            'SPEC §7.1: a shared boundary moves both edges, and the '
+            'running entry is no exception',
+      );
+      expect(entries[1].isRunning, isTrue);
+      await r.h.close();
+    });
+
+    test('a correction that really would overlap is still refused', () async {
+      // A gap this time, so the boundary is free rather than shared: there is
+      // no neighbour to carry, and growing A past B's start is a plain §4.2
+      // overlap. A 09:00-09:30, gap, B 10:00-running.
+      final h = TimelineHarness(startAt: DateTime.utc(2026, 3, 10, 9));
+      await h.writer.startByName(name: 'A');
+      h.clock.advance(const Duration(minutes: 30));
+      await h.writer.stop();
+      h.clock.advance(const Duration(minutes: 30));
+      await h.writer.startByName(name: 'B');
+      h.clock.advance(const Duration(hours: 2));
+      final a = (await h.entries()).first;
+
+      await expectLater(
+        () => h.writer.setEntryTimes(
+          entryId: a.id,
+          startUtc: a.startUtc,
+          endUtc: DateTime.utc(2026, 3, 10, 10, 30),
+        ),
+        throwsA(isA<InvariantViolation>()),
+        reason: 'reading the running entry once, not twice, still sees §4.2',
+      );
+      expect(
+        (await h.byId(a.id)).endUtc,
+        DateTime.utc(2026, 3, 10, 9, 30),
+        reason: 'SPEC §4.6: the refused write changed nothing',
+      );
+      await h.close();
+    });
   });
 }

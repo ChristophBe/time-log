@@ -31,10 +31,18 @@ void main() {
 
   test('domainHasNoFlutterImports', () {
     final offenders = <String>[];
+    // Everything under domain/ except the writer, rather than a list of
+    // subdirectories: the rule is that the layer is pure, and a new folder in
+    // it should inherit the rule rather than quietly escape the test.
+    //
+    // `timeline_writer.dart` is the one sanctioned exception. SPEC §11.3 makes
+    // it the single thing that mutates the timeline, and it does that inside a
+    // Drift transaction — being able to see the database is the whole point of
+    // it.
     final pure = dartFiles.where(
       (f) =>
-          f.path.contains('/domain/timeline/') ||
-          f.path.contains('/domain/models/'),
+          f.path.contains('/domain/') &&
+          !f.path.endsWith('domain/timeline_writer.dart'),
     );
     for (final file in pure) {
       final source = file.readAsStringSync();

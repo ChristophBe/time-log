@@ -71,11 +71,26 @@ void main() {
   });
 
   group('targets and contrast (SPEC §10.2, §10.3)', () {
-    testWidgets('tap targets meet the Android and iOS minimums', (
+    testWidgets('every control meets the Android and iOS minimums', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
-      await harnessWithRunning().pump(tester, const TodayScreen());
+      // The *controls*: the header, the composer, the running band. Not the
+      // calendar, and that is a deliberate scope rather than an oversight.
+      //
+      // A block's size is its duration. SPEC §8.2 puts a floor of 18px under it
+      // so a short entry stays visible, which no amount of design makes 48, and
+      // §10.1 answers that with equivalents rather than with size: the entry
+      // sheet's fields and steppers, the keyboard, and the increase/decrease
+      // semantics actions on the block itself — all asserted in
+      // `day_calendar_test.dart` and `editing_test.dart`. The guideline also
+      // measures a node's *visible* rect, so a tall block or gap that is half
+      // scrolled off the screen reads as a short one, which is an artefact of
+      // the viewport and not a property of the target.
+      await WidgetHarness(
+        now: now,
+        activities: activities,
+      ).pump(tester, const TodayScreen());
 
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
       await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
@@ -107,13 +122,21 @@ void main() {
       });
     }
 
-    testWidgets('the start sheet renders at 2x text scale', (tester) async {
+    testWidgets('the start composer renders at 2x text scale', (tester) async {
       final h = WidgetHarness(
         now: now,
         activities: activities,
+        running: entryFor(
+          id: 'e1',
+          activityId: specs.id,
+          start: now.subtract(const Duration(minutes: 30)),
+        ),
         suggestions: <ActivitySuggestion>[
-          suggestionFor(activity: specs, lastUsed: now),
-          suggestionFor(activity: email, lastUsed: now),
+          for (var i = 0; i < 8; i++)
+            suggestionFor(
+              activity: activityFor(id: 'x$i', name: 'Activity number $i'),
+              lastUsed: now,
+            ),
         ],
       );
       await h.pump(
@@ -121,10 +144,16 @@ void main() {
         const TodayScreen(),
         textScaler: const TextScaler.linear(2),
       );
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Start'));
+      await tester.tap(find.byKey(const Key('start-field')));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+      // The panel is capped and scrolls inside the cap, so a long list at 2x
+      // can never push the field off the bottom of the screen (SPEC §10.2).
+      expect(
+        tester.getRect(find.byKey(const Key('start-field'))).bottom,
+        lessThanOrEqualTo(900),
+      );
     });
   });
 
@@ -140,12 +169,7 @@ void main() {
           suggestionFor(activity: email, lastUsed: now),
         ],
       );
-      when(
-        () => h.writer.startByName(
-          name: any(named: 'name'),
-          note: any(named: 'note'),
-        ),
-      ).thenAnswer(
+      when(() => h.writer.startByName(name: any(named: 'name'))).thenAnswer(
         (_) async => StartOutcome(
           mode: StartMode.started,
           entryId: 'new',
@@ -154,7 +178,7 @@ void main() {
       );
       await h.pump(tester, const TodayScreen());
 
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Start'));
+      await tester.tap(find.byKey(const Key('start-field')));
       await tester.pumpAndSettle();
 
       // Down twice selects the second suggestion, Enter commits it.
@@ -165,27 +189,34 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
 
-      verify(() => h.writer.startByName(name: 'Email', note: null)).called(1);
+      verify(() => h.writer.startByName(name: 'Email')).called(1);
     });
 
-    testWidgets('Escape closes the start sheet without starting anything', (
+    testWidgets('Escape puts the composer away without starting anything', (
       tester,
     ) async {
-      final h = WidgetHarness(now: now, activities: activities);
+      final h = WidgetHarness(
+        now: now,
+        activities: activities,
+        suggestions: <ActivitySuggestion>[
+          suggestionFor(activity: email, lastUsed: now),
+        ],
+      );
       await h.pump(tester, const TodayScreen());
 
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Start'));
+      await tester.tap(find.byKey(const Key('start-field')));
       await tester.pumpAndSettle();
+      expect(find.text('Email'), findsOneWidget);
+
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
 
-      expect(find.text('What are you doing?'), findsNothing);
-      verifyNever(
-        () => h.writer.startByName(
-          name: any(named: 'name'),
-          note: any(named: 'note'),
-        ),
+      expect(
+        find.text('Email'),
+        findsNothing,
+        reason: 'one key hands the screen back to the day',
       );
+      verifyNever(() => h.writer.startByName(name: any(named: 'name')));
     });
   });
 }

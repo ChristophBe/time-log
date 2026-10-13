@@ -11,15 +11,51 @@ changing behaviour — in particular §4 (the timeline invariants), §7 (boundar
 
 ## Status
 
-Phases **P0–P3** of `SPEC.md` §13 are built: tracking, the day calendar, and editing.
+Phases **P0–P4** of `SPEC.md` §13 are built: tracking, the day calendar, editing, and daily
+usability — history and search, backup and restore, the settings, and the small corrections that
+make a tracked day fixable. **P5** (platform affordances: notifications, Live Activity, tray, PWA)
+is untouched.
 
-| Works today | Not built yet (SPEC §13, P4–P6) |
+Starting an activity is a composer docked to the bottom of the day — type a name and hit **Start**,
+or focus the field and tap one of the ranked suggestions that rise above it. There is no FAB and no
+modal; §8.3 of the spec explains why the modal that used to be there was removed.
+
+The screen is three zones: the day header (date, tracked total, day navigation, and what is
+running), the day itself, and that composer. Spacing, shape, type and colour come from one place —
+`lib/src/app/design.dart`, `theme.dart` and `palette.dart` — and §9.8 of the spec states the rules.
+Two of them do most of the work:
+
+- **Two voices.** Words are set in Geist Sans and every number in Geist Mono — the hour axis, the
+  times on a block, durations, the ticking readout. Both are vendored under `assets/fonts/` (SIL
+  OFL, see `assets/fonts/OFL.txt`), because the app works offline and a font fetched at runtime
+  would not.
+- **Colour means one of four things**: an activity (one of twelve hues), *now* (one reserved
+  accent — the hue arc it sits in is struck from the activity palette, so nothing else can wear it),
+  *wrong* (the error colour), or nothing at all, which is everything else. Primary buttons are ink.
+
+The launcher icon is generated from one hand-written SVG in `tool/brand/`; that directory's README
+has the two commands.
+
+**On each platform it is a guest, not a tourist.** The identity above is the same everywhere; the
+manners are the host's. Apple platforms get Liquid Glass — translucent chrome that floats over the
+day, capsule controls, wheel pickers, Cupertino dialogs, a real macOS menu bar — Android gets
+Material with predictive back and edge-to-edge, Windows and Linux get their own density and corner
+radii. `lib/src/app/platform_style.dart` holds the numbers and `adaptive.dart` the controls that
+differ; SPEC §9.8 states which things may vary and which may not. `flutter test` pins the target
+platform to Android, so the suite is the Material path by default and
+`test/features/platform_test.dart` is what goes looking for the others.
+
+| Works today | Not built yet (SPEC §13, P5–P6) |
 | --- | --- |
-| Start / stop / resume / continue, with undo on everything | History screen and search |
-| Day calendar: hour axis, now-line, gaps, midnight splitting, DST-correct days | Export / import |
-| Correcting a boundary by drag, by typing, or by keyboard alone | "Still tracking after 8 h?" banner |
-| Ranked activity suggestions, 12-colour palette | Tapping a gap to fill it |
-| Minimal settings: snap interval, 12/24 h, theme | Notifications, desktop tray, week view, reports |
+| Start / stop / resume / continue, with undo on everything | Android notification, iOS Live Activity |
+| Day calendar: hour axis, now-line, gaps, midnight splitting, DST-correct days | Desktop tray and global shortcuts |
+| Correcting a boundary by drag, by typing, or by keyboard alone | Web install / PWA polish |
+| History, grouped by day, searchable by name and note | Week view, per-activity reports (P6) |
+| JSON backup and import, with a dry run before anything changes | Projects, tags, sync (P6) |
+| Exporting a date range as CSV | |
+| Filling a gap, splitting where you choose, the long-run banner | |
+| Renaming, recolouring and merging activities | |
+| Settings: snap, clock, theme, week start, day height, continue window, long-run threshold | |
 
 ## Running it
 
@@ -32,13 +68,43 @@ flutter run -d chrome            # or: -d macos, -d android, …
 Code generation is required after changing anything under `lib/src/data/db/` or any `@riverpod`
 provider. `dart run build_runner watch` during development.
 
+### Releasing on macOS
+
+`tool/release_macos.sh` produces a Developer ID build: signed, hardened, notarised by Apple,
+stapled, and packaged as a universal `build/release/time-log-<version>.dmg` that opens on any Mac
+without a Gatekeeper warning. This is direct distribution, not the App Store.
+
+```sh
+./tool/release_macos.sh
+SKIP_NOTARIZE=1 ./tool/release_macos.sh   # build and sign only, no round trip to Apple
+```
+
+Pushing a `v<version>` tag runs this same script on a CI runner and attaches the result to a draft
+GitHub Release, along with the other platforms' artefacts — see [CI](#ci). Running it locally stays
+supported and is the faster way to debug a signing problem.
+
+Notarising needs credentials in the keychain once per machine. An App Store Connect API key
+(Users and Access → Integrations, role *Developer*) rather than an app-specific password: it
+survives a password change and is what a CI runner would use. The `.p8` stays out of the repo.
+
+```sh
+xcrun notarytool store-credentials time-log-notary \
+  --key ~/private_keys/AuthKey_XXXXXXXXXX.p8 --key-id XXXXXXXXXX --issuer <issuer-uuid>
+```
+
+Signing settings live in `macos/Runner/Configs/AppInfo.xcconfig`, scoped to the Release
+configuration so `flutter run -d macos` keeps Xcode's ad-hoc signature and a checkout without the
+certificate still builds. Both entitlements files grant `files.user-selected.read-only`, which a
+sandboxed app needs before the file picker can hand back a backup to import.
+
 ### Platform notes
 
-The app targets Android, iOS, macOS, Windows, Linux and web from one codebase. Only **web** has been
-built and run so far, because this machine has no Android SDK and no Xcode — the other platform
-folders are scaffolded and should build once those toolchains are installed, but that is unverified.
+The app targets Android, iOS, macOS, Windows, Linux and web from one codebase. **Web** and **macOS**
+have been built and run by hand; the other four are scaffolded, and CI is what compiles them — every
+push to `main` builds all six, because "nothing silently missing on a platform" (SPEC §14.12) is not
+a claim this machine can check on its own with no Android SDK on it.
 
-Correctness does not depend on a device: all 175 tests run on the Dart VM.
+Correctness does not depend on a device: all 429 tests run on the Dart VM.
 
 On the web, drift picks the best storage the browser offers. `flutter run`'s dev server does not send
 the COOP/COEP headers that OPFS needs, so it generally falls back to IndexedDB — both persist, so
@@ -50,8 +116,14 @@ app says so rather than pretending the data is safe.
 ```sh
 flutter analyze
 dart format --set-exit-if-changed .
-flutter test
+TZ=Europe/Berlin flutter test
 ```
+
+**The timezone is not optional.** Fixtures are UTC instants on 2026-03-10 and the UI renders local
+time (SPEC §5.3), so the suite assumes a **UTC+01:00** rendering zone; 18 tests — 13 of the 15
+goldens, four in `editing_test.dart` and one in `day_calendar_test.dart` — fail under `TZ=UTC`. Dart takes
+the local zone from the process environment and nothing else, so exporting `TZ` is the fix rather
+than a workaround. Any zone at +01:00 on that date works; CI uses `Europe/Berlin`.
 
 The suite is organised by what it protects, not by file:
 
@@ -63,12 +135,62 @@ The suite is organised by what it protects, not by file:
 - `test/features/accessibility_test.dart` — SPEC §10 as assertions: tap-target and contrast
   guidelines, labelled controls, 200 % text scale, keyboard-only operation, and the rule that the
   ticking elapsed readout stays *out* of the semantics tree.
+- `test/app/palette_test.dart`, `test/app/theme_test.dart` — the identity rules of SPEC §9.8 as
+  assertions: contrast by construction for all twelve activity colours, the accent's hue arc
+  reserved, primary carrying no chroma.
+- `test/features/golden_test.dart` — the look, in light and dark at 1.0× and 2.0× text scale. These
+  are the only tests that would notice a redesign; everything else asserts behaviour. Regenerate
+  with `flutter test --update-goldens` and look at the PNGs before committing them. Tagged `golden`,
+  because they are pixel-exact against the platform that made them: CI runs them on macOS and
+  everything else on Linux (`flutter test --tags golden` / `--exclude-tags golden`).
 - `test/architecture_test.dart` — no `DateTime.now()` outside `core/clock.dart`; `domain/timeline`
   and `domain/models` import neither Flutter nor Drift.
 
 Widget tests run against fixed provider state and a mock writer, not a real database: drift's queries
 complete on the real event loop and deadlock inside `testWidgets`' fake-async zone. The database
 behaviour is covered against real SQLite by the writer tests instead.
+
+### CI
+
+`.github/workflows/ci.yml` runs SPEC §12's gates so they are not a thing to remember. The Flutter
+version is pinned to the one in `.metadata` rather than tracking `stable`, because the goldens are
+pixel-exact against whatever Skia the SDK ships.
+
+| | Pull request | Push to `main` |
+| --- | --- | --- |
+| `dart format`, `flutter analyze`, `flutter test` | ✅ | ✅ |
+| generated code is current (`build_runner` + `git diff --exit-code`) | ✅ | ✅ |
+| goldens (on macOS) | ✅ | ✅ |
+| build web, Android | ✅ | ✅ |
+| build iOS, macOS, Windows, Linux | | ✅ |
+| integration suite on an Android emulator and macOS | | ✅ |
+
+The codegen check exists because `analysis_options.yaml` excludes `**/*.g.dart`, so a stale
+generated file would otherwise pass everything. The macOS build job signs with the real Developer ID
+when the secrets are present, which also runs the release script's notarisation preflight on every
+push instead of saving the surprise for a release; without the secrets it builds Debug and says so.
+
+`.github/workflows/release.yml` turns a `v*` tag into a draft GitHub Release: a notarised `.dmg`
+from `tool/release_macos.sh`, an APK, a Windows zip, a Linux tarball and the web bundle. It refuses
+to run if the tag and `pubspec.yaml` disagree about the version. Nothing above the release row needs a secret; the
+notarised `.dmg` needs five, and `tool/ci/` holds the two scripts that put them where the release
+script expects to find them.
+
+| Secret | |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12` | `base64 -i cert.p12` of the exported Developer ID Application certificate |
+| `MACOS_CERTIFICATE_PASSWORD` | the password that `.p12` was exported with |
+| `APPLE_API_KEY_P8` | contents of `AuthKey_XXXXXXXXXX.p8` |
+| `APPLE_API_KEY_ID` | the key's ten-character id |
+| `APPLE_API_ISSUER_ID` | the issuer UUID from App Store Connect |
+
+Set them with `./tool/ci/set_secrets.sh`, which asks for the two files and the export password,
+checks the password actually opens the `.p12`, warns if the certificate is not the identity
+`tool/release_macos.sh` signs as, and uploads everything through `gh` on stdin so no secret reaches
+your shell history. Re-running it replaces the values.
+
+The keychain the runner signs out of gets a password generated on the spot rather than configured:
+it guards a file that exists for one job on a machine that is then destroyed.
 
 ## How it is put together
 
@@ -80,6 +202,7 @@ lib/src/
   domain/models/       Activity, TimeEntry, AppSettings — pure Dart
   domain/timeline/     boundary math, day windows, gaps, totals, conflicts — pure Dart
   domain/timeline_writer.dart   the only code that writes to the timeline
+  app/         theme, design scale, activity palette, router
   features/    today, calendar, entry, settings
 ```
 
