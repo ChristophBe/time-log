@@ -1061,6 +1061,7 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 `deleteLeavesGapAndDoesNotStretchNeighbours`.
 
 **Unit — relabelling (§6.10).** `relabelKeepsTimesAndNote` ·
+`relabelLeavesTheActivityAndItsOtherEntriesAlone` ·
 `relabelResolvesAnExistingActivityByNameKey` · `relabelCreatesTheActivityWhenTheNameIsNew` ·
 `relabelIsUndoable` · `relabelToTheSameActivityChangesNothing` · `relabelWorksOnTheRunningEntry`.
 
