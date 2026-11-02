@@ -210,22 +210,37 @@ void main() {
     expect(find.byType(ExportSheet), findsOneWidget);
   });
 
-  testWidgets('the sheet meets SPEC §10', (tester) async {
+  Future<void> pumpSheetWithAnEntry(WidgetTester tester) => pumpSheet(
+    tester,
+    entries: <TimeEntry>[
+      entry(
+        id: 'e1',
+        start: DateTime.utc(2026, 3, 10, 9),
+        end: DateTime.utc(2026, 3, 10, 10),
+      ),
+    ],
+  );
+
+  testWidgets('the sheet meets SPEC §10 on labelling and targets', (
+    tester,
+  ) async {
     final handle = tester.ensureSemantics();
-    await pumpSheet(
-      tester,
-      entries: <TimeEntry>[
-        entry(
-          id: 'e1',
-          start: DateTime.utc(2026, 3, 10, 9),
-          end: DateTime.utc(2026, 3, 10, 10),
-        ),
-      ],
-    );
+    await pumpSheetWithAnEntry(tester);
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(textContrastGuideline));
     handle.dispose();
   });
+
+  // With the goldens because, like them, it depends on the rasteriser: the
+  // guideline takes the commonest dark pixel at 1x as the text colour, and on
+  // Linux that can be an anti-aliasing grey rather than the ink, failing 12 pt
+  // Geist at 2:1 on colours that are really 8:1.
+  testWidgets('the sheet meets SPEC §10 on contrast', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpSheetWithAnEntry(tester);
+
+    await expectLater(tester, meetsGuideline(textContrastGuideline));
+    handle.dispose();
+  }, tags: <String>['golden']);
 }
