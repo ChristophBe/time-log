@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/app_settings.dart';
 import '../models/time_entry.dart';
+import '../presence/active_session.dart';
 import '../timeline/invariants.dart';
 
 /// The format version written into every backup and checked on read.
@@ -9,7 +10,9 @@ import '../timeline/invariants.dart';
 /// Bumped when the *file* changes shape, which is not the same as the database
 /// schema version: SPEC §5.4 requires a file written today to stay importable
 /// by later versions of the app.
-const int backupFormatVersion = 1;
+///
+/// v2 adds `activeSessions` (SPEC §9.9); a v1 file simply has none.
+const int backupFormatVersion = 2;
 
 /// One stored entry, with the bookkeeping columns the domain model leaves out.
 ///
@@ -117,6 +120,45 @@ class BackupActivity {
   );
 }
 
+/// One stored active session, with its bookkeeping (SPEC §9.9).
+class BackupSession {
+  const BackupSession({
+    required this.session,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final ActiveSession session;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  String get id => session.id;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': session.id,
+    'startUtc': session.startUtc.toUtc().toIso8601String(),
+    'endUtc': session.endUtc?.toUtc().toIso8601String(),
+    'lastSeenUtc': session.lastSeenUtc.toUtc().toIso8601String(),
+    'endReason': session.endReason?.name,
+    'tzName': session.tzName,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+  };
+
+  static BackupSession fromJson(Map<String, Object?> json) => BackupSession(
+    session: ActiveSession(
+      id: _string(json, 'id'),
+      startUtc: _instant(json, 'startUtc')!,
+      endUtc: _instant(json, 'endUtc'),
+      lastSeenUtc: _instant(json, 'lastSeenUtc') ?? _instant(json, 'startUtc')!,
+      tzName: _string(json, 'tzName'),
+      endReason: SessionEndReason.fromName(json['endReason'] as String?),
+    ),
+    createdAt: _instant(json, 'createdAt') ?? _instant(json, 'startUtc')!,
+    updatedAt: _instant(json, 'updatedAt') ?? _instant(json, 'startUtc')!,
+  );
+}
+
 /// A whole backup: everything the app holds (SPEC §8.6).
 class BackupFile {
   const BackupFile({
@@ -125,12 +167,14 @@ class BackupFile {
     required this.activities,
     required this.entries,
     required this.settings,
+    this.sessions = const <BackupSession>[],
   });
 
   final int formatVersion;
   final DateTime exportedAt;
   final List<BackupActivity> activities;
   final List<BackupEntry> entries;
+  final List<BackupSession> sessions;
   final AppSettings settings;
 }
 
@@ -140,6 +184,7 @@ String encodeBackup({
   required Iterable<BackupEntry> entries,
   required AppSettings settings,
   required DateTime exportedAt,
+  Iterable<BackupSession> sessions = const <BackupSession>[],
 }) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
   'formatVersion': backupFormatVersion,
   'exportedAt': exportedAt.toUtc().toIso8601String(),
@@ -154,6 +199,7 @@ String encodeBackup({
   },
   'activities': <Object?>[for (final a in activities) a.toJson()],
   'entries': <Object?>[for (final e in entries) e.toJson()],
+  'activeSessions': <Object?>[for (final s in sessions) s.toJson()],
 });
 
 /// The result of reading a file: either a backup, or a reason it is not one.
@@ -211,6 +257,11 @@ BackupRead parseBackup(String text) {
           for (final e in (decoded['entries'] as List<Object?>? ?? const []))
             BackupEntry.fromJson(e! as Map<String, Object?>),
         ],
+        sessions: <BackupSession>[
+          for (final s
+              in (decoded['activeSessions'] as List<Object?>? ?? const []))
+            BackupSession.fromJson(s! as Map<String, Object?>),
+        ],
         settings: AppSettings(
           snap: Duration(
             minutes: (settings['snapMinutes'] as num?)?.toInt() ?? 5,
@@ -246,6 +297,8 @@ class BackupPlan {
     required this.added,
     required this.updated,
     required this.skipped,
+    this.sessionsToWrite = const <BackupSession>[],
+    this.sessionsAdded = 0,
     this.rejection,
   });
 
@@ -254,10 +307,15 @@ class BackupPlan {
   /// The rows to write if this plan is applied, already merged.
   final List<BackupEntry> entriesToWrite;
   final List<BackupActivity> activitiesToWrite;
+  final List<BackupSession> sessionsToWrite;
 
   final int added;
   final int updated;
   final int skipped;
+
+  /// Active sessions this file brings. Counted apart, because a session is not
+  /// an entry and "Added 3" should keep meaning entries.
+  final int sessionsAdded;
 
   /// Why this file cannot be applied, naming the first offending pair, or null
   /// if it can.
@@ -278,6 +336,7 @@ BackupPlan planMerge({
   required List<BackupEntry> existingEntries,
   required List<BackupActivity> existingActivities,
   required DateTime now,
+  List<BackupSession> existingSessions = const <BackupSession>[],
 }) {
   final merged = <String, BackupEntry>{
     for (final entry in existingEntries) entry.id: entry,
@@ -340,15 +399,81 @@ BackupPlan planMerge({
     rejection = violation.detail;
   }
 
+  final sessions = mergeSessions(
+    incoming: incoming.sessions,
+    existing: existingSessions,
+  );
+
   return BackupPlan(
     file: incoming,
     entriesToWrite: merged.values.toList(),
     activitiesToWrite: mergedActivities.values.toList(),
+    sessionsToWrite: sessions,
+    sessionsAdded: sessions.length - existingSessions.length,
     added: added,
     updated: updated,
     skipped: skipped,
     rejection: rejection,
   );
+}
+
+/// Sessions after a merge: by `id`, newest `updatedAt` wins (SPEC §8.6).
+///
+/// Unlike entries, a session that does not fit is skipped rather than failing
+/// the file. Sessions are a record alongside the timeline and must never be the
+/// reason a timeline cannot be restored. What is already here takes precedence,
+/// and that includes the session open right now.
+List<BackupSession> mergeSessions({
+  required List<BackupSession> incoming,
+  required List<BackupSession> existing,
+}) {
+  final byId = <String, BackupSession>{for (final s in existing) s.id: s};
+  final accepted = <BackupSession>[];
+  for (final candidate in incoming) {
+    final closed = _closedAtLastSeen(candidate);
+    if (closed == null) continue;
+    final current = byId[closed.id];
+    if (current == null) {
+      accepted.add(closed);
+    } else if (closed.updatedAt.isAfter(current.updatedAt)) {
+      byId[closed.id] = closed;
+    }
+  }
+  accepted.sort((a, b) => a.session.startUtc.compareTo(b.session.startUtc));
+
+  final kept = byId.values.toList();
+  for (final candidate in accepted) {
+    if (!kept.any((other) => _overlap(candidate, other))) kept.add(candidate);
+  }
+  return kept;
+}
+
+/// A file can't hold a session that is still going: it was going on the
+/// computer that exported it, at that moment. So it ended when it was last seen
+/// (SPEC §9.9, rule 4), or, if it was never seen, it did not happen.
+BackupSession? _closedAtLastSeen(BackupSession incoming) {
+  final session = incoming.session;
+  if (!session.isOpen) return incoming;
+  if (!session.lastSeenUtc.isAfter(session.startUtc)) return null;
+  return BackupSession(
+    session: ActiveSession(
+      id: session.id,
+      startUtc: session.startUtc,
+      endUtc: session.lastSeenUtc,
+      lastSeenUtc: session.lastSeenUtc,
+      tzName: session.tzName,
+      endReason: SessionEndReason.lost,
+    ),
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+  );
+}
+
+bool _overlap(BackupSession a, BackupSession b) {
+  final aEnd = a.session.endUtc;
+  final bEnd = b.session.endUtc;
+  return (bEnd == null || a.session.startUtc.isBefore(bEnd)) &&
+      (aEnd == null || b.session.startUtc.isBefore(aEnd));
 }
 
 String _string(Map<String, Object?> json, String key) {

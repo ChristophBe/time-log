@@ -265,6 +265,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.axisRule,
     required this.axisRuleFaint,
     required this.gutterSpine,
+    required this.activeRail,
     required this.hairline,
     required this.gapInk,
     required this.gapStroke,
@@ -279,6 +280,7 @@ class AppColors extends ThemeExtension<AppColors> {
     axisRule: scheme.outlineVariant,
     axisRuleFaint: scheme.outlineVariant.withValues(alpha: 0.45),
     gutterSpine: scheme.outlineVariant.withValues(alpha: 0.7),
+    activeRail: scheme.onSurfaceVariant.withValues(alpha: 0.55),
     hairline: scheme.outlineVariant.withValues(alpha: 0.6),
     gapInk: scheme.onSurfaceVariant,
     gapStroke: scheme.outlineVariant.withValues(alpha: 0.8),
@@ -297,6 +299,10 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color axisRule;
   final Color axisRuleFaint;
   final Color gutterSpine;
+
+  /// When the computer was in use (SPEC §9.9). Chrome, not an activity and not
+  /// *now*, so it gets ink and no hue.
+  final Color activeRail;
 
   /// Dividers between the three zones of the screen.
   final Color hairline;
@@ -325,6 +331,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? axisRule,
     Color? axisRuleFaint,
     Color? gutterSpine,
+    Color? activeRail,
     Color? hairline,
     Color? gapInk,
     Color? gapStroke,
@@ -336,6 +343,7 @@ class AppColors extends ThemeExtension<AppColors> {
     axisRule: axisRule ?? this.axisRule,
     axisRuleFaint: axisRuleFaint ?? this.axisRuleFaint,
     gutterSpine: gutterSpine ?? this.gutterSpine,
+    activeRail: activeRail ?? this.activeRail,
     hairline: hairline ?? this.hairline,
     gapInk: gapInk ?? this.gapInk,
     gapStroke: gapStroke ?? this.gapStroke,
@@ -352,6 +360,7 @@ class AppColors extends ThemeExtension<AppColors> {
       axisRule: Color.lerp(axisRule, other.axisRule, t)!,
       axisRuleFaint: Color.lerp(axisRuleFaint, other.axisRuleFaint, t)!,
       gutterSpine: Color.lerp(gutterSpine, other.gutterSpine, t)!,
+      activeRail: Color.lerp(activeRail, other.activeRail, t)!,
       hairline: Color.lerp(hairline, other.hairline, t)!,
       gapInk: Color.lerp(gapInk, other.gapInk, t)!,
       gapStroke: Color.lerp(gapStroke, other.gapStroke, t)!,

@@ -1,6 +1,7 @@
 import '../../domain/backup/json_backup.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/time_entry.dart';
+import '../../domain/presence/active_session.dart';
 import 'database.dart';
 
 /// Row <-> domain conversions. Kept in one place so the UTC-millis storage
@@ -25,6 +26,17 @@ extension TimeEntryRowMapper on TimeEntryRow {
   );
 }
 
+extension ActiveSessionRowMapper on ActiveSessionRow {
+  ActiveSession toDomain() => ActiveSession(
+    id: id,
+    startUtc: _utc(startUtc),
+    endUtc: endUtc == null ? null : _utc(endUtc!),
+    lastSeenUtc: _utc(lastSeenUtc),
+    tzName: tzName,
+    endReason: SessionEndReason.fromName(endReason),
+  );
+}
+
 DateTime _utc(int millis) =>
     DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
 
@@ -42,6 +54,14 @@ extension ActivityBackupMapper on ActivityRow {
     nameKey: nameKey,
     colorSeed: colorSeed,
     archived: archived != 0,
+    createdAt: _utc(createdAt),
+    updatedAt: _utc(updatedAt),
+  );
+}
+
+extension ActiveSessionBackupMapper on ActiveSessionRow {
+  BackupSession toBackup() => BackupSession(
+    session: toDomain(),
     createdAt: _utc(createdAt),
     updatedAt: _utc(updatedAt),
   );

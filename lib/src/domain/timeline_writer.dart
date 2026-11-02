@@ -741,6 +741,7 @@ class TimelineWriter {
       // was removed by the merge.
       await _db.delete(_db.timeEntries).go();
       await _db.delete(_db.activities).go();
+      await _db.delete(_db.activeSessions).go();
 
       for (final activity in plan.activitiesToWrite) {
         await _db
@@ -778,6 +779,26 @@ class TimelineWriter {
               ),
             );
       }
+      // Not timeline data, but the same file: it lands or fails with the rest.
+      for (final backup in plan.sessionsToWrite) {
+        final session = backup.session;
+        await _db
+            .into(_db.activeSessions)
+            .insert(
+              ActiveSessionsCompanion.insert(
+                id: session.id,
+                startUtc: toMillis(session.startUtc),
+                endUtc: Value(
+                  session.endUtc == null ? null : toMillis(session.endUtc!),
+                ),
+                lastSeenUtc: toMillis(session.lastSeenUtc),
+                endReason: Value(session.endReason?.name),
+                tzName: session.tzName,
+                createdAt: toMillis(backup.createdAt),
+                updatedAt: toMillis(backup.updatedAt),
+              ),
+            );
+      }
     });
   }
 
@@ -786,6 +807,7 @@ class TimelineWriter {
   Future<void> deleteAllData() => _db.transaction(() async {
     await _db.delete(_db.timeEntries).go();
     await _db.delete(_db.activities).go();
+    await _db.delete(_db.activeSessions).go();
   });
 
   // ------------------------------------------------------------- activities

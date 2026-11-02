@@ -107,6 +107,24 @@ void main() {
     expect(settings.snapMinutes, 5, reason: 'and the old ones are untouched');
   });
 
+  test('active time arrives off, with its table ready', () async {
+    final settings = await db.select(db.settingsRow).getSingle();
+
+    expect(settings.trackActiveTime, 0, reason: 'SPEC §9.9: opt-in');
+    expect(await db.select(db.activeSessions).get(), isEmpty);
+  });
+
+  test('the single-open index exists after the upgrade', () async {
+    const insert =
+        'INSERT INTO active_sessions (id, start_utc, last_seen_utc, tz_name, '
+        'created_at, updated_at) VALUES ';
+    await db.customStatement("$insert('s1', 1, 1, 'UTC', 1, 1)");
+    await expectLater(
+      db.customStatement("$insert('s2', 2, 2, 'UTC', 1, 1)"),
+      throwsA(anything),
+    );
+  });
+
   test('SPEC §4 still holds after the upgrade', () async {
     final entries = (await db.select(db.timeEntries).get())
         .map((row) => row.toDomain())
@@ -131,5 +149,33 @@ void main() {
       ),
       throwsA(anything),
     );
+  });
+
+  test('a v2 database reaches v3 with its settings intact', () async {
+    final sqlite = raw_sqlite.sqlite3.openInMemory();
+    for (final statement in _v1Schema.split(';')) {
+      if (statement.trim().isEmpty) continue;
+      sqlite.execute(statement);
+    }
+    sqlite.execute(
+      'ALTER TABLE settings_row ADD COLUMN '
+      'first_day_of_week INTEGER NOT NULL DEFAULT 0',
+    );
+    sqlite.execute(
+      'ALTER TABLE settings_row ADD COLUMN '
+      'long_run_minutes INTEGER NOT NULL DEFAULT 480',
+    );
+    sqlite.execute('PRAGMA user_version = 2');
+    sqlite.execute(
+      'INSERT INTO settings_row (id, long_run_minutes) VALUES (1, 240)',
+    );
+    final v2 = AppDatabase(NativeDatabase.opened(sqlite));
+    addTearDown(v2.close);
+
+    final settings = await v2.select(v2.settingsRow).getSingle();
+
+    expect(settings.longRunMinutes, 240);
+    expect(settings.trackActiveTime, 0);
+    expect(await v2.select(v2.activeSessions).get(), isEmpty);
   });
 }

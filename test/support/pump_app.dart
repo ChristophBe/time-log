@@ -5,14 +5,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:time_log/src/app/theme.dart';
 import 'package:time_log/src/core/clock.dart';
+import 'package:time_log/src/data/repositories/active_session_repository.dart';
 import 'package:time_log/src/data/repositories/settings_repository.dart';
 import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
+import 'package:time_log/src/domain/presence/active_session.dart';
 import 'package:time_log/src/domain/timeline/day_window.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
 import 'package:time_log/src/features/entry/entry_providers.dart';
+import 'package:time_log/src/features/presence/presence_port.dart';
+import 'package:time_log/src/features/presence/presence_providers.dart';
 import 'package:time_log/src/features/today/today_providers.dart';
 
 class MockTimelineWriter extends Mock implements TimelineWriter {}
@@ -24,6 +28,9 @@ class MockSettingsRepository extends Mock implements SettingsRepository {}
 /// The read side, for screens that query it directly rather than through one
 /// of the day providers — the export sheet asks for an arbitrary range.
 class MockTimeEntryRepository extends Mock implements TimeEntryRepository {}
+
+class MockActiveSessionRepository extends Mock
+    implements ActiveSessionRepository {}
 
 /// Widget tests run against fixed provider state and a mock writer rather than a
 /// real database.
@@ -45,6 +52,8 @@ class WidgetHarness {
     this.runStart,
     this.runningStream,
     this.neighbours = (previous: null, next: null),
+    this.sessions = const <ActiveSession>[],
+    this.presencePort = const UnsupportedPresencePort(),
   }) : clock = FakeClock(now ?? DateTime.utc(2026, 3, 10, 14, 32));
 
   final FakeClock clock;
@@ -74,9 +83,15 @@ class WidgetHarness {
   /// decide whether its boundaries are shared or free (SPEC §7.1).
   final EntryNeighbours neighbours;
 
+  /// Active sessions on the day (SPEC §9.9).
+  final List<ActiveSession> sessions;
+  final PresencePort presencePort;
+
   final MockTimelineWriter writer = MockTimelineWriter();
   final MockSettingsRepository settingsRepository = MockSettingsRepository();
   final MockTimeEntryRepository entryRepository = MockTimeEntryRepository();
+  final MockActiveSessionRepository sessionRepository =
+      MockActiveSessionRepository();
 
   /// The harness's suggestions, filtered the way SPEC §9.6 filters them.
   List<ActivitySuggestion> _matching(String query) => query.isEmpty
@@ -101,6 +116,8 @@ class WidgetHarness {
         .thenAnswer((_) => Stream<List<TimeEntry>>.value(entries));
     when(() => entryRepository.watchActivitiesById())
         .thenAnswer((_) => Stream<Map<String, Activity>>.value(activities));
+    when(() => sessionRepository.readForBackup()).thenAnswer((_) async => []);
+    when(() => sessionRepository.deleteAll()).thenAnswer((_) async {});
     await tester.binding.setSurfaceSize(surfaceSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -113,6 +130,11 @@ class WidgetHarness {
           timelineWriterProvider.overrideWithValue(writer),
           settingsRepositoryProvider.overrideWithValue(settingsRepository),
           timeEntryRepositoryProvider.overrideWithValue(entryRepository),
+          activeSessionRepositoryProvider.overrideWithValue(sessionRepository),
+          presencePortProvider.overrideWithValue(presencePort),
+          daySessionsProvider.overrideWith(
+            (ref) => Stream<List<ActiveSession>>.value(sessions),
+          ),
           appSettingsProvider.overrideWith(
             (ref) => Stream<AppSettings>.value(settings),
           ),
@@ -199,6 +221,18 @@ TimeEntry entryFor({
   endUtc: end,
   tzName: 'Europe/Berlin',
   note: note,
+);
+
+ActiveSession sessionFor({
+  required String id,
+  required DateTime start,
+  DateTime? end,
+}) => ActiveSession(
+  id: id,
+  startUtc: start,
+  endUtc: end,
+  lastSeenUtc: end ?? start,
+  tzName: 'Europe/Berlin',
 );
 
 Activity activityFor({

@@ -20,6 +20,7 @@ import '../../domain/timeline/invariants.dart';
 import '../../domain/timeline/timeline_math.dart';
 import '../../domain/timeline_writer.dart';
 import 'fill_gap_sheet.dart';
+import '../presence/active_rail.dart';
 import '../today/action_feedback.dart';
 import '../today/resume_action.dart';
 import '../today/today_providers.dart';
@@ -328,6 +329,14 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
                   metrics: metrics,
                   gutter: gutter,
                   use24h: settings.use24HourClock,
+                ),
+                Positioned.fill(
+                  child: ActiveRail(
+                    metrics: metrics,
+                    gutter: gutter,
+                    now: now,
+                    use24h: settings.use24HourClock,
+                  ),
                 ),
                 for (final gap in timeline.gaps)
                   Positioned(

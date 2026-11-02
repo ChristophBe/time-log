@@ -9,6 +9,7 @@ import '../../data/repositories/settings_repository.dart';
 import '../../domain/models/app_settings.dart';
 import '../backup/backup_sheet.dart';
 import '../export/export_sheet.dart';
+import '../presence/active_time_settings.dart';
 import '../shortcuts/shortcuts_sheet.dart';
 
 /// A minimal settings screen (part of SPEC §8.6).
@@ -139,6 +140,8 @@ class SettingsScreen extends ConsumerWidget {
               settings.copyWith(pixelsPerHour: pixels.toDouble()),
             ),
           ),
+          const _SectionHeader('Active time'),
+          const ActiveTimeSettings(),
           const _SectionHeader('Data'),
           ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: Insets.lg),

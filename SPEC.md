@@ -26,7 +26,7 @@ cheap enough that you keep doing it:
 | Not in v1 | Why |
 | --- | --- |
 | Overlapping entries | You do one thing at a time; non-overlap is what makes the calendar and the totals trustworthy. |
-| Automatic tracking (app/window/idle detection) | Large platform-specific surface, privacy-sensitive, and it changes the product. |
+| Automatic entries (app/window/idle detection) | Large platform-specific surface, privacy-sensitive, and it changes the product. What you did stays something you say. The one thing recorded for you is *whether you were at the computer*, which is a separate, opt-in layer and never an entry (§9.9). |
 | Projects, tags, clients, billing, invoicing | Free-text activity names cover personal tracking; structure can be layered on later (§13, P6). |
 | Multi-device sync, accounts, sharing | Local-only keeps v1 small and private. The schema does not preclude it (§5.4). |
 | Pomodoro, reminders to start, goals, streaks | Different product. Not what is being asked for. |
@@ -77,6 +77,7 @@ length"**. Everything else can cost a tap more.
 | **Snap** | Rounding applied to times edited by gesture. Default 5 minutes. |
 | **Day window** | `[local midnight, next local midnight)`. All day-scoped views and totals use it. |
 | **Day rollover** | Stopping the running entry at a local midnight and restarting it there, so no running entry spans two days (§6.11). |
+| **Active session** | One span during which the computer was unlocked and awake (§9.9). Recorded by the app, never an entry, and invisible to everything in §4. |
 
 ---
 
@@ -102,7 +103,8 @@ maps to a named test in §12.
    by stretching neighbours.
 
 Violations of 1–3 are additionally impossible at the SQL level (§5.2); 4–7 are enforced by the
-single writer (§11.3).
+single writer (§11.3). Active sessions (§9.9) are not entries: none of this applies to them, and they
+have their own smaller set of rules.
 
 ---
 
@@ -135,8 +137,20 @@ applies to all history at once.
 | `createdAt` / `updatedAt` | utc millis | |
 | `deletedAt` | utc millis? | Soft delete. All reads filter `deletedAt IS NULL`. Purged after 30 days. |
 
+**ActiveSession** — one span at the computer (§9.9).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid v4 string | |
+| `startUtc` | utc millis | |
+| `endUtc` | utc millis? | `null` ⇒ open. |
+| `lastSeenUtc` | utc millis | Heartbeat. The latest moment the app knows the session was still going. |
+| `endReason` | string? | `lock`, `sleep`, `switchUser`, `logout`, `off`, or `lost` when the end was inferred (§9.9). |
+| `tzName` | string | As on `TimeEntry` (§5.3). |
+| `createdAt` / `updatedAt` | utc millis | |
+
 **Settings** — single-row table: snap interval, 12/24h, first day of week, theme mode, pixels-per-hour,
-long-run threshold, "continue window" (§6.4).
+long-run threshold, "continue window" (§6.4), track active time (§9.9, off by default).
 
 ### 5.2 Schema
 
@@ -172,6 +186,24 @@ CREATE TABLE time_entries (
 CREATE UNIQUE INDEX ux_entries_single_running ON time_entries (is_running);
 CREATE        INDEX ix_entries_start          ON time_entries (start_utc);
 CREATE        INDEX ix_entries_activity_start ON time_entries (activity_id, start_utc);
+
+CREATE TABLE active_sessions (
+  id            TEXT    NOT NULL PRIMARY KEY,
+  start_utc     INTEGER NOT NULL,
+  end_utc       INTEGER,
+  last_seen_utc INTEGER NOT NULL,
+  end_reason    TEXT,
+  tz_name       TEXT    NOT NULL,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  -- 1 only while this row is the open session; the same trick as is_running.
+  is_open       INTEGER GENERATED ALWAYS AS (
+                  CASE WHEN end_utc IS NULL THEN 1 END) VIRTUAL,
+  CHECK (end_utc IS NULL OR end_utc > start_utc)
+);
+
+CREATE UNIQUE INDEX ux_sessions_single_open ON active_sessions (is_open);
+CREATE        INDEX ix_sessions_start       ON active_sessions (start_utc);
 ```
 
 This schema is verified: against SQLite 3.51, inserting a second running entry fails with
@@ -450,6 +482,10 @@ tells you nothing, and the date is the real title of this screen.
   a report (§8.6), not a thing to carry on the home screen. §10.4 already asked the day header to
   announce the date and the total, so this also makes the screen agree with a rule the footer
   arrangement was quietly failing.
+- **Active total**: on a day with active sessions (§9.9), a second stat beside the tracked total
+  reads `Active 7 h 12 min`. A day without any shows exactly what it always did, so someone who never
+  turns the feature on never sees it. It is a button: it opens the day's unlogged active time, which
+  is the way a session becomes an entry (§9.9).
 - **Long-run banner**: if the running entry exceeds the long-run threshold (default 8 h), a
   non-blocking banner — "Still tracking *X* after 8 h?" — with **Stop at…** (time picker) and
   **Keep going**. Never a modal, never a notification you cannot dismiss. The threshold is measured
@@ -494,6 +530,12 @@ tells you nothing, and the date is the real title of this screen.
 - **Gaps**: untracked ranges over 5 minutes are shown as a shallow recess under a sparse hatch,
   labelled with their length, tappable to create an entry filling exactly that gap. Quiet on
   purpose: a hatch at the weight of the hour rules makes every gap the loudest thing on the day.
+- **Active rail**: a thin neutral stroke at the inner edge of the gutter marking each active session
+  (§9.9), so "was I here?" can be read beside "what did I say I did?". It sits in the gutter because
+  it describes the *axis*, not an activity, and the blocks must keep the width they had. It has no
+  colour meaning (§9.8) and takes no input: it can be read, not edited, and a drag aimed at a block
+  must never land on it. A day with sessions and no entries shows the calendar rather than the empty
+  state, because that is exactly the day with the most to log.
 - **Day navigation**, in the header's first row (§8.1): horizontal swipe, `←`/`→`, the date itself
   opens a date picker, a **Today** action that is only enabled when you are not on today, and the
   day's tracked total beside the date.
@@ -600,7 +642,11 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
   that is consistent with itself can still overlap what is already here — and the whole import is
   one transaction, so a rejected file changes nothing (§4.6). Tombstones are carried in the file and
   restored, or a round trip would resurrect everything ever deleted.
-- **Delete all data**, with typed confirmation.
+- **Active time** (§9.9): **Track time at this computer**, off by default, with what it records and
+  what it does to the app stated beside the switch rather than behind it, then the login item's
+  status and **Delete active-time history**. On a platform without it, the switch is disabled and
+  says so (§14.12).
+- **Delete all data**, with typed confirmation. This includes active sessions.
 - About: version, licences, link to this spec.
 
 ---
@@ -617,6 +663,10 @@ no foreground service requirement, and no doze-mode problem. The UI timer is a p
 §6.11's day rollover is not an exception to this. It accumulates nothing and recovers nothing: it
 only moves where one span is recorded as ending, so that a day owns its own entries. Elapsed time is
 still `now - startUtc` over whatever the current entry is.
+
+All of this is about the timeline and stays true of it. Active time (§9.9) is the one thing that
+keeps the app running in the background, and only once it has been turned on. An entry's elapsed
+time never depends on that.
 
 ### 9.2 Clock jumps
 
@@ -791,6 +841,68 @@ and with the safe area.
 is Cmd on Apple and Ctrl elsewhere, never both. On macOS the same callbacks are also a real menu bar
 (app, Track, View), so a menu can never drift from its shortcut.
 
+### 9.9 Active time
+
+The timeline says what you did. It cannot say whether a gap means "away" or "here, and I forgot to
+log it". Active time answers that, on macOS for now, and is **off until you turn it on**.
+
+**What counts.** Active means *unlocked and awake*. A session starts at login, unlock or wake, and
+ends at lock, screen sleep, system sleep, a user switch, logout or shutdown. Literally "logged in"
+would be useless: a Mac can stay logged in for weeks. There is no idle detection, so walking away
+counts as active until the screen locks or sleeps.
+
+The OS keeps no usable history of this — `last` lists terminal sessions and `pmset -g log` keeps
+about six days and mixes in the maintenance wakes of a closed lid — so the app records it itself.
+
+**What it is not.** A session is never an entry. It does not start, stop or fill anything, is not in
+the tracked total or the CSV, and leaves §4 alone — invariant 7 in particular. `TimelineWriter`
+remains the only writer of `time_entries`; `ActiveSessionRepository` is the only writer of
+`active_sessions`.
+
+**Turning one into an entry.** You can log a recording as an activity, and that is always your act,
+one span at a time: nothing is ever converted for you. Tapping the active total lists the day's
+**unlogged active time**, meaning the parts of its sessions that no entry covers and that are at
+least the one-minute editing minimum (§7.2). Picking one asks what you were doing, as filling a gap
+does (§8.2), and adds a normal entry through `TimelineWriter.insertEntry`, with §4 checked and Undo
+offered. Only uncovered time is offered, so a session that overlaps an entry cannot produce a
+conflict. The session is not changed: it records that you were here, which stays true whatever you
+call the time.
+
+**Capture.** Turning it on registers the app as a login item, and the app then stays running: closing
+the window hides it, removes it from the Dock, and leaves a menu bar item with **Open time-log** and
+**Quit**. Turning it off undoes all of that, and closing the window quits again. Quitting really
+quits, so nothing is recorded until the next launch.
+
+One native predicate — on the console, not locked, screens awake, not asleep — is recomputed on every
+relevant notification and again on the heartbeat. Lock notifications give an exact instant; the
+heartbeat's re-read is what still catches a lock if they never arrive, within 60 seconds. A wake to a
+locked screen therefore starts nothing, and a closed lid's maintenance wake never wakes the screens,
+so it leaves no trace.
+
+**Rules.** All pure, in `domain/presence/`.
+
+1. **Idempotent signals.** A signal is *active*, or *inactive and why*, at an instant. Repeating one
+   changes nothing, so the heartbeat can simply re-assert the current state.
+2. **One open session**, enforced by a unique index (§5.2). Sessions do not overlap and always have
+   positive length.
+3. **A break under 60 seconds is not a break.** The session it interrupted is reopened, so a display
+   that blinks off does not cut the day into pieces.
+4. **Crash recovery.** The heartbeat stamps `lastSeenUtc` every 60 seconds. An open session not seen
+   for over 3 minutes ended at `lastSeenUtc`, with reason `lost`. That is the last moment known to be
+   true; "now" would invent the time between. A session that was never seen after it opened has no
+   honest end, and is dropped.
+5. **A clock that moved backwards cannot produce a negative session.** An *inactive* signal at or
+   before the session's start closes it at `lastSeenUtc` instead, and an *active* signal older than
+   the last session's end is ignored.
+6. **Facts, not edits.** Sessions cannot be edited. They can be deleted, all at once.
+
+**Privacy.** Sessions stay on the device, like everything else here (§1). They travel only in a
+backup you export. The backup carries the sessions but **not** the setting, and import never changes
+it: consent and the login item belong to this computer, so restoring a file must not start recording.
+
+**Platforms.** macOS only for now. Windows and Linux could do this and are not built; phones and the
+web have no equivalent. Everywhere else the setting is shown disabled and says so (§14.12).
+
 ---
 
 ## 10. Accessibility requirements
@@ -829,6 +941,8 @@ feature that fails them is not done.
   `"Double tap to edit"`; `increasedValue`/`decreasedValue` describing the snap step; the running
   block appends `", running"`.
 - Gaps: `"Untracked, 12:10 to 12:35, 25 minutes. Double tap to add an entry."`
+- Active rail: `"At the computer, 08:12 to 12:40, 4 hours 28 minutes"`, or `"At the computer since
+  08:12, 4 hours 28 minutes"` while open. Read-only, in the same chronological order as the blocks.
 - `SemanticsService.announce` on start, stop, resume, continue, delete, undo, and every committed
   boundary change ("*Email* now ends at 15:05").
 - **The ticking elapsed counter is not a live region.** It is labelled coarsely (`"running, 1 hour
@@ -984,6 +1098,11 @@ running entry survives with correct elapsed time. Plus export → wipe → impor
 **Migration.** Drift schema snapshots per version, with a test migrating from every past version to
 current and asserting §4 still holds.
 
+**Unit — active time (§9.9).** `repeatedSignalChangesNothing` · `shortBreakReopensSession` ·
+`staleSessionClosesAtLastSeen` · `unseenSessionIsDropped` · `signalBeforeStartNeverGoesNegative` ·
+`onlyOneOpenSessionEverExists` · `activeTotalClipsToDayWindow` · `importNeverEnablesTracking` ·
+`unloggedActiveTimeExcludesEntries` · `loggingASpanAddsAnEntryAndKeepsTheSession`.
+
 **Architecture.** `timelineWriterIsTheOnlyWriter` (grep for `time_entries` updates outside it) ·
 `noDateTimeNowOutsideClock` (§11.4) · `domainHasNoFlutterImports`.
 
@@ -1011,6 +1130,7 @@ the README both use `Europe/Berlin`.
 | **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | **Built.** Export → wipe → import round-trips, asserted in `backup_round_trip_test.dart`. §10.6's manual passes (TalkBack, VoiceOver, keyboard-only, 200 %) are still outstanding. The `integration_test` run needed a device, which P4.2 supplies. |
 | **P4.1 Day rollover** | Stop and restart the running entry at midnight (§6.11), the catch-up pass at launch / resume / tick (§9.3) — the app's first lifecycle hook — the day view following midnight (§8.2), and the long-run threshold measured over the whole run (§8.1). | Rollover tests green; a clock left running overnight comes back as one entry per day with the 8 h banner still able to fire. |
 | **P4.2 CI** | GitHub Actions: §12's gates on every pull request, all six platform builds and the integration suite on every push to `main` (§14.12), and a `v*` tag cutting a release — the macOS artefact through `tool/release_macos.sh` so there is one definition of a release build. | Workflows green on `main`, including the first execution of the integration suite. |
+| **P4a Active time** | §9.9 on macOS: session table and rules, native monitor, login item, staying alive behind a menu bar item, rail, active total, setting, backup. | Automated tests green. The native half cannot be tested on the VM, so it needs one manual pass on a signed build: lock, sleep, lid, user switch, reboot, `kill -9`, an hour hidden. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, projects/tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
@@ -1044,6 +1164,10 @@ surface, and the spec updated if the phase taught us something.
 13. A clock left running across one or more midnights comes back as one entry per day plus a running
     one for today, with no time gained or lost, and the long-run banner still measuring the whole
     run. Verified by test.
+14. With active time on, a Mac's lock, sleep and login boundaries appear on the day without the app's
+    window having been opened, and a crash ends a session at the last moment it was known to be true.
+15. Any unlogged active time can become an entry, by keyboard or screen reader as well as by tap, with
+    a working undo, and is never converted without being asked.
 
 ---
 
@@ -1064,6 +1188,8 @@ The original request, mapped to where it is specified:
 | Change entry length afterwards to fix errors | §6.5, §7 in full, §8.4, §14.5 |
 | Fix a mis-labelled entry afterwards | §6.10, §8.4 |
 | Stop and restart entries at the end of the day | §6.11, §9.3, §8.2 |
+| Log when I am active on the computer | §9.9, §8.1, §8.2, §8.6, §14.14 |
+| Create activity entries from those recordings | §9.9, §8.1, §14.15 |
 
 ---
 

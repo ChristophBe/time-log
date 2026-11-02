@@ -18,9 +18,24 @@ ClippedSpan? clipToWindow(
   required DateTime to,
   required DateTime now,
 }) {
-  final start = entry.startUtc.isBefore(from) ? from : entry.startUtc;
-  var end = entry.endOr(now);
-  if (end.isAfter(to)) end = to;
-  if (!end.isAfter(start)) return null;
-  return (start: start, end: end);
+  return clipSpan(
+    start: entry.startUtc,
+    end: entry.endOr(now),
+    from: from,
+    to: to,
+  );
+}
+
+/// The slice of `[start, end)` inside the half-open window `[from, to)`, or null
+/// if none of it is. Active sessions (SPEC §9.9) clip by this arithmetic too.
+ClippedSpan? clipSpan({
+  required DateTime start,
+  required DateTime end,
+  required DateTime from,
+  required DateTime to,
+}) {
+  final clippedStart = start.isBefore(from) ? from : start;
+  final clippedEnd = end.isAfter(to) ? to : end;
+  if (!clippedEnd.isAfter(clippedStart)) return null;
+  return (start: clippedStart, end: clippedEnd);
 }
