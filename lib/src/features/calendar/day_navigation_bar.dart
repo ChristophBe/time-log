@@ -6,6 +6,8 @@ import '../../app/adaptive.dart';
 import '../../app/design.dart';
 import '../../core/clock.dart';
 import '../../core/formatters.dart';
+import '../presence/active_sessions_sheet.dart';
+import '../presence/presence_providers.dart';
 import '../today/today_providers.dart';
 
 /// The top row of the day header: which day you are looking at, how much of it
@@ -156,29 +158,85 @@ class _TrackedTotal extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tracked = ref.watch(dayTotalsProvider).tracked;
-    final scheme = Theme.of(context).colorScheme;
+    final active = ref.watch(activeTotalProvider);
+    final ink = Theme.of(context).colorScheme.onSurfaceVariant;
+    final label = Theme.of(context).textTheme.labelMedium?.copyWith(color: ink);
+    final number = AppType.numeric(label);
     // Scaled down rather than ellipsised when the row is tight: half a total
     // ("2 h 1…") is no use to anyone, and this is the same trick the elapsed
     // readout uses for the same reason.
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerRight,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Insets.sm,
-          vertical: Insets.xs / 2,
-        ),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh,
-          borderRadius: Radii.pill,
-        ),
-        child: Text(
-          formatDuration(tracked),
-          maxLines: 1,
-          softWrap: false,
-          style: AppType.numeric(Theme.of(context).textTheme.labelMedium)
-              ?.copyWith(color: scheme.onSurfaceVariant),
-          semanticsLabel: 'Tracked ${formatDurationVerbose(tracked)}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // Only on a day that has any (SPEC §8.1): someone who never turned
+          // active time on should never see a trace of it.
+          if (active != null) ...<Widget>[
+            _Stat(
+              onTap: () => showActiveSessionsSheet(context),
+              // The label is a word and the amount a number, so they take the
+              // two voices (SPEC §9.8).
+              span: TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(text: 'Active ', style: label),
+                  TextSpan(text: formatDuration(active), style: number),
+                ],
+              ),
+              semanticsLabel: 'Active ${formatDurationVerbose(active)}',
+            ),
+            const SizedBox(width: Insets.xs),
+          ],
+          _Stat(
+            span: TextSpan(text: formatDuration(tracked), style: number),
+            semanticsLabel: 'Tracked ${formatDurationVerbose(tracked)}',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat({required this.span, required this.semanticsLabel, this.onTap});
+
+  final TextSpan span;
+  final String semanticsLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Insets.sm,
+        vertical: Insets.xs / 2,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: Radii.pill,
+      ),
+      child: Text.rich(
+        span,
+        maxLines: 1,
+        softWrap: false,
+        semanticsLabel: semanticsLabel,
+      ),
+    );
+    if (onTap == null) return pill;
+    // The pill is far shorter than a legal target, so the target is the row's
+    // height and the pill just sits in it (SPEC §10.2).
+    return Semantics(
+      button: true,
+      hint: 'Double tap to log active time as an entry',
+      child: InkWell(
+        key: const Key('active-total'),
+        onTap: onTap,
+        borderRadius: Radii.pill,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+          child: Center(widthFactor: 1, child: pill),
         ),
       ),
     );

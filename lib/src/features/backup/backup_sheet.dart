@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/design.dart';
 import '../../core/clock.dart';
+import '../../data/repositories/active_session_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/backup/json_backup.dart';
@@ -20,11 +21,15 @@ import 'backup_providers.dart';
 Future<void> exportEverything(BuildContext context, WidgetRef ref) async {
   final repository = ref.read(timeEntryRepositoryProvider);
   final data = await repository.readForBackup();
+  final sessions = await ref
+      .read(activeSessionRepositoryProvider)
+      .readForBackup();
   final settings = ref.read(appSettingsProvider).value ?? const AppSettings();
   final now = ref.read(appClockProvider).nowUtc();
   final text = encodeBackup(
     activities: data.activities,
     entries: data.entries,
+    sessions: sessions,
     settings: settings,
     exportedAt: now,
   );
@@ -56,10 +61,14 @@ Future<void> startImport(BuildContext context, WidgetRef ref) async {
   }
 
   final existing = await ref.read(timeEntryRepositoryProvider).readForBackup();
+  final existingSessions = await ref
+      .read(activeSessionRepositoryProvider)
+      .readForBackup();
   final plan = planMerge(
     incoming: (read as BackupReadOk).file,
     existingEntries: existing.entries,
     existingActivities: existing.activities,
+    existingSessions: existingSessions,
     now: ref.read(appClockProvider).nowUtc(),
   );
   if (!context.mounted) return;
@@ -129,6 +138,8 @@ class _ImportSheetState extends ConsumerState<ImportSheet> {
                 value: plan.skipped,
                 hint: 'already newer here',
               ),
+              if (plan.sessionsAdded > 0)
+                _Count(label: 'Active sessions', value: plan.sessionsAdded),
             ] else
               Container(
                 width: double.infinity,
@@ -250,8 +261,8 @@ class _DeleteAllDialogState extends State<_DeleteAllDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         const Text(
-          'Every entry and activity is removed. This one is not undoable, so '
-          'export a backup first if you might want it.',
+          'Every entry, activity and active session is removed. This one is '
+          'not undoable, so export a backup first if you might want it.',
         ),
         const SizedBox(height: Insets.md),
         TextField(

@@ -51,10 +51,13 @@ class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   /// v1 -> v2 adds the two settings SPEC §8.6 lists and nothing stored: the
   /// first day of the week and the long-run threshold.
+  ///
+  /// v2 -> v3 adds active sessions and the setting that turns them on, which
+  /// stays off for anyone upgrading (SPEC §9.9).
   ///
   /// Written as explicit column additions rather than a table rebuild so that
   /// an upgrade cannot lose a row, and covered by a migration test from a
@@ -66,6 +69,12 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.addColumn(settingsRow, settingsRow.firstDayOfWeek);
         await m.addColumn(settingsRow, settingsRow.longRunMinutes);
+      }
+      if (from < 3) {
+        await m.addColumn(settingsRow, settingsRow.trackActiveTime);
+        await m.createTable(activeSessions);
+        await m.createIndex(uxSessionsSingleOpen);
+        await m.createIndex(ixSessionsStart);
       }
     },
     beforeOpen: (details) async {

@@ -7,6 +7,7 @@ import '../core/clock.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/app_settings.dart';
 import '../features/today/day_rollover.dart';
+import '../features/presence/presence_controller.dart';
 import 'router.dart';
 import 'theme.dart';
 
@@ -50,6 +51,9 @@ class _TimeLogAppState extends ConsumerState<TimeLogApp> {
       (_, _) => _rollOver(),
     );
 
+    // Kept alive from here because nothing on screen reads it: it records
+    // whether or not the window is open (SPEC §9.9).
+    ref.watch(presenceControllerProvider);
     final settings =
         ref.watch(appSettingsProvider).value ?? const AppSettings();
     return MaterialApp.router(

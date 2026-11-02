@@ -14,7 +14,8 @@ changing behaviour — in particular §4 (the timeline invariants), §7 (boundar
 Phases **P0–P4** of `SPEC.md` §13 are built: tracking, the day calendar, editing, and daily
 usability — history and search, backup and restore, the settings, and the small corrections that
 make a tracked day fixable. **P5** (platform affordances: notifications, Live Activity, tray, PWA)
-is untouched.
+is untouched. **Active time** (§9.9) is built on macOS: with it switched on, the app starts at login,
+stays behind a menu bar item, and draws when you were at the computer as a rail beside the hour axis.
 
 Starting an activity is a composer docked to the bottom of the day — type a name and hit **Start**,
 or focus the field and tap one of the ranked suggestions that rise above it. There is no FAB and no
@@ -56,6 +57,7 @@ platform to Android, so the suite is the Material path by default and
 | Filling a gap, splitting where you choose, the long-run banner | |
 | Renaming, recolouring and merging activities | |
 | Settings: snap, clock, theme, week start, day height, continue window, long-run threshold | |
+| Active time on macOS: when the computer was unlocked and awake, opt-in, and any of it can be logged as an entry | Active time on Windows and Linux |
 
 ## Running it
 
@@ -97,6 +99,10 @@ configuration so `flutter run -d macos` keeps Xcode's ad-hoc signature and a che
 certificate still builds. Both entitlements files grant `files.user-selected.read-only`, which a
 sandboxed app needs before the file picker can hand back a backup to import.
 
+Active time (SPEC §9.9) needs macOS 13 for `SMAppService`, and its native half lives in
+`macos/Runner/PresenceMonitor.swift`. The Dart VM cannot exercise it, so check it on a signed build
+in `/Applications`, where the login item behaves as shipped.
+
 ### Platform notes
 
 The app targets Android, iOS, macOS, Windows, Linux and web from one codebase. **Web** and **macOS**
@@ -104,7 +110,8 @@ have been built and run by hand; the other four are scaffolded, and CI is what c
 push to `main` builds all six, because "nothing silently missing on a platform" (SPEC §14.12) is not
 a claim this machine can check on its own with no Android SDK on it.
 
-Correctness does not depend on a device: all 429 tests run on the Dart VM.
+Correctness does not depend on a device: all 485 tests run on the Dart VM. The one
+exception is the native half of active time (SPEC §9.9), which needs a real Mac and a real lock screen.
 
 On the web, drift picks the best storage the browser offers. `flutter run`'s dev server does not send
 the COOP/COEP headers that OPFS needs, so it generally falls back to IndexedDB — both persist, so
@@ -143,6 +150,8 @@ The suite is organised by what it protects, not by file:
   with `flutter test --update-goldens` and look at the PNGs before committing them. Tagged `golden`,
   because they are pixel-exact against the platform that made them: CI runs them on macOS and
   everything else on Linux (`flutter test --tags golden` / `--exclude-tags golden`).
+- `test/domain/presence/`, `test/data/active_session_repository_test.dart` — the active-time rules of
+  SPEC §9.9, pure and then against real SQLite.
 - `test/architecture_test.dart` — no `DateTime.now()` outside `core/clock.dart`; `domain/timeline`
   and `domain/models` import neither Flutter nor Drift.
 
@@ -203,7 +212,8 @@ lib/src/
   domain/timeline/     boundary math, day windows, gaps, totals, conflicts — pure Dart
   domain/timeline_writer.dart   the only code that writes to the timeline
   app/         theme, design scale, activity palette, router
-  features/    today, calendar, entry, settings
+  domain/presence/     what a lock or an unlock does to a session — pure Dart
+  features/    today, calendar, entry, settings, presence
 ```
 
 Three load-bearing ideas:
@@ -218,6 +228,7 @@ Three load-bearing ideas:
    exactly one row can hold the value `1`. Non-overlap has no SQL equivalent and is enforced in the
    writer's transaction.
 
-3. **No background execution.** A running entry is just a stored `startUtc`; elapsed time is
-   `now - startUtc`, computed on read. App kill, reboot and device sleep therefore need no recovery
-   code, and there is no foreground-service or doze-mode problem on any platform.
+3. **No background execution for tracking.** A running entry is just a stored `startUtc`; elapsed
+   time is `now - startUtc`, computed on read. App kill, reboot and device sleep therefore need no
+   recovery code, and there is no foreground-service or doze-mode problem on any platform. Active
+   time (SPEC §9.9) is the one opt-in exception, and no entry depends on it.

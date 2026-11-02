@@ -8,6 +8,7 @@ class AppSettings {
     this.continueWindow = const Duration(minutes: 5),
     this.firstDayOfWeek = 0,
     this.longRun = const Duration(hours: 8),
+    this.trackActiveTime = false,
   });
 
   /// Gesture edits round to this (SPEC §7.3). Zero means no snapping.
@@ -28,6 +29,10 @@ class AppSettings {
   /// (SPEC §8.1). Zero turns the question off.
   final Duration longRun;
 
+  /// Whether this computer records active sessions (SPEC §9.9). Belongs to the
+  /// machine, so unlike everything above it never travels in a backup.
+  final bool trackActiveTime;
+
   static const double minPixelsPerHour = 40;
   static const double maxPixelsPerHour = 240;
   static const List<int> snapChoicesMinutes = <int>[0, 1, 5, 15];
@@ -42,6 +47,7 @@ class AppSettings {
     Duration? continueWindow,
     int? firstDayOfWeek,
     Duration? longRun,
+    bool? trackActiveTime,
   }) => AppSettings(
     snap: snap ?? this.snap,
     use24HourClock: use24HourClock ?? this.use24HourClock,
@@ -50,6 +56,7 @@ class AppSettings {
     continueWindow: continueWindow ?? this.continueWindow,
     firstDayOfWeek: firstDayOfWeek ?? this.firstDayOfWeek,
     longRun: longRun ?? this.longRun,
+    trackActiveTime: trackActiveTime ?? this.trackActiveTime,
   );
 
   @override
@@ -61,7 +68,8 @@ class AppSettings {
       other.pixelsPerHour == pixelsPerHour &&
       other.continueWindow == continueWindow &&
       other.firstDayOfWeek == firstDayOfWeek &&
-      other.longRun == longRun;
+      other.longRun == longRun &&
+      other.trackActiveTime == trackActiveTime;
 
   @override
   int get hashCode => Object.hash(
@@ -72,6 +80,7 @@ class AppSettings {
     continueWindow,
     firstDayOfWeek,
     longRun,
+    trackActiveTime,
   );
 }
 

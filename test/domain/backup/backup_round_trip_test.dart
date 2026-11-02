@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_log/src/data/db/mappers.dart';
 import 'package:time_log/src/domain/backup/json_backup.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
+import 'package:time_log/src/domain/presence/active_session.dart';
 import 'package:time_log/src/domain/timeline/invariants.dart';
 
 import '../../support/fixtures.dart';
@@ -177,5 +179,115 @@ void main() {
       reason: 'the writer refuses it too, not just the UI',
     );
     expect(fingerprint(await h.entries()), before, reason: 'nothing changed');
+  });
+
+  group('active sessions (SPEC §9.9)', () {
+    BackupSession stored(
+      String id,
+      DateTime start,
+      DateTime? end, {
+      DateTime? lastSeen,
+    }) => BackupSession(
+      session: ActiveSession(
+        id: id,
+        startUtc: start,
+        endUtc: end,
+        lastSeenUtc: lastSeen ?? end ?? start,
+        tzName: 'Europe/Berlin',
+      ),
+      createdAt: start,
+      updatedAt: end ?? start,
+    );
+
+    final a = DateTime.utc(2026, 3, 10, 9);
+    final b = DateTime.utc(2026, 3, 10, 10);
+    final c = DateTime.utc(2026, 3, 10, 11);
+
+    String encoded(List<BackupSession> sessions) => encodeBackup(
+      activities: const <BackupActivity>[],
+      entries: const <BackupEntry>[],
+      sessions: sessions,
+      settings: const AppSettings(trackActiveTime: true),
+      exportedAt: a,
+    );
+
+    test('sessions survive the file', () {
+      final read = parseBackup(encoded([stored('s1', a, b)])) as BackupReadOk;
+
+      expect(read.file.sessions.single.session, stored('s1', a, b).session);
+    });
+
+    test('a v1 file loads, with no sessions', () {
+      const v1 =
+          '{"formatVersion": 1, "activities": [], "entries": [], '
+          '"settings": {}}';
+
+      expect((parseBackup(v1) as BackupReadOk).file.sessions, isEmpty);
+    });
+
+    test('importNeverEnablesTracking', () {
+      final text = encoded(const <BackupSession>[]);
+
+      expect(text, isNot(contains('trackActive')));
+      expect(
+        (parseBackup(text) as BackupReadOk).file.settings.trackActiveTime,
+        isFalse,
+      );
+    });
+
+    test('an overlapping session is skipped, not fatal', () {
+      final merged = mergeSessions(
+        incoming: [stored('new', a, c)],
+        existing: [stored('here', b, c)],
+      );
+
+      expect(merged.map((s) => s.id), ['here']);
+    });
+
+    test('a non-overlapping session is added', () {
+      final merged = mergeSessions(
+        incoming: [stored('new', a, b)],
+        existing: [stored('here', b, c)],
+      );
+
+      expect(merged.map((s) => s.id).toSet(), {'here', 'new'});
+    });
+
+    test('an imported open session ends where it was last seen', () {
+      final merged = mergeSessions(
+        incoming: [stored('open', a, null, lastSeen: b)],
+        existing: const [],
+      );
+
+      expect(merged.single.session.endUtc, b);
+      expect(merged.single.session.endReason, SessionEndReason.lost);
+    });
+
+    test('an imported session that was never seen is dropped', () {
+      expect(
+        mergeSessions(incoming: [stored('open', a, null)], existing: const []),
+        isEmpty,
+      );
+    });
+
+    test('applying a plan keeps the session open here', () async {
+      await h.db.customStatement(
+        'INSERT INTO active_sessions (id, start_utc, last_seen_utc, tz_name, '
+        "created_at, updated_at) VALUES ('live', 1, 1, 'UTC', 1, 1)",
+      );
+      final existing = await h.db.select(h.db.activeSessions).get();
+      final plan = planMerge(
+        incoming:
+            (parseBackup(encoded([stored('s1', a, b)])) as BackupReadOk).file,
+        existingEntries: const [],
+        existingActivities: const [],
+        existingSessions: existing.map((row) => row.toBackup()).toList(),
+        now: h.now,
+      );
+
+      await h.writer.applyBackup(plan);
+
+      expect(await h.db.select(h.db.activeSessions).get(), hasLength(1 + 0));
+    });
   });
 }

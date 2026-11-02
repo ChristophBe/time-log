@@ -15,6 +15,7 @@ Future<String?> showFillGapSheet(
   required DateTime endLocal,
   required Duration duration,
   required bool use24h,
+  String title = 'Fill this gap',
 }) => showModalBottomSheet<String>(
   context: context,
   isScrollControlled: true,
@@ -24,6 +25,7 @@ Future<String?> showFillGapSheet(
     endLocal: endLocal,
     duration: duration,
     use24h: use24h,
+    title: title,
   ),
 );
 
@@ -33,12 +35,14 @@ class _FillGapSheet extends StatefulWidget {
     required this.endLocal,
     required this.duration,
     required this.use24h,
+    required this.title,
   });
 
   final DateTime startLocal;
   final DateTime endLocal;
   final Duration duration;
   final bool use24h;
+  final String title;
 
   @override
   State<_FillGapSheet> createState() => _FillGapSheetState();
@@ -77,10 +81,7 @@ class _FillGapSheetState extends State<_FillGapSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'Fill this gap',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: Insets.xs),
             Text(
               '$range  ·  ${formatDuration(widget.duration)}',

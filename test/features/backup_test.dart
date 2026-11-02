@@ -129,7 +129,7 @@ void main() {
 
     expect(delivery.calls, 1);
     expect(delivery.fileName, 'time-log-backup-2026-03-11.json');
-    expect(delivery.text, contains('"formatVersion": 1'));
+    expect(delivery.text, contains('"formatVersion": 2'));
     expect(delivery.text, contains('Writing specs'));
   });
 

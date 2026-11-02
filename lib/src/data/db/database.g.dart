@@ -1143,6 +1143,18 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
     $customConstraints: 'NOT NULL DEFAULT 480',
     defaultValue: const CustomExpression('480'),
   );
+  static const VerificationMeta _trackActiveTimeMeta = const VerificationMeta(
+    'trackActiveTime',
+  );
+  late final GeneratedColumn<int> trackActiveTime = GeneratedColumn<int>(
+    'track_active_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
+    defaultValue: const CustomExpression('0'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1153,6 +1165,7 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
     continueMinutes,
     firstDayOfWeek,
     longRunMinutes,
+    trackActiveTime,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1229,6 +1242,15 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
         ),
       );
     }
+    if (data.containsKey('track_active_time')) {
+      context.handle(
+        _trackActiveTimeMeta,
+        trackActiveTime.isAcceptableOrUnknown(
+          data['track_active_time']!,
+          _trackActiveTimeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1270,6 +1292,10 @@ class SettingsRow extends Table with TableInfo<SettingsRow, SettingsRowData> {
         DriftSqlType.int,
         data['${effectivePrefix}long_run_minutes'],
       )!,
+      trackActiveTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}track_active_time'],
+      )!,
     );
   }
 
@@ -1296,6 +1322,9 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
   /// weekday constants.
   final int firstDayOfWeek;
   final int longRunMinutes;
+
+  /// Added in schema v3. Off until asked for (SPEC §9.9).
+  final int trackActiveTime;
   const SettingsRowData({
     required this.id,
     required this.snapMinutes,
@@ -1305,6 +1334,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     required this.continueMinutes,
     required this.firstDayOfWeek,
     required this.longRunMinutes,
+    required this.trackActiveTime,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1317,6 +1347,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     map['continue_minutes'] = Variable<int>(continueMinutes);
     map['first_day_of_week'] = Variable<int>(firstDayOfWeek);
     map['long_run_minutes'] = Variable<int>(longRunMinutes);
+    map['track_active_time'] = Variable<int>(trackActiveTime);
     return map;
   }
 
@@ -1330,6 +1361,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       continueMinutes: Value(continueMinutes),
       firstDayOfWeek: Value(firstDayOfWeek),
       longRunMinutes: Value(longRunMinutes),
+      trackActiveTime: Value(trackActiveTime),
     );
   }
 
@@ -1347,6 +1379,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       continueMinutes: serializer.fromJson<int>(json['continue_minutes']),
       firstDayOfWeek: serializer.fromJson<int>(json['first_day_of_week']),
       longRunMinutes: serializer.fromJson<int>(json['long_run_minutes']),
+      trackActiveTime: serializer.fromJson<int>(json['track_active_time']),
     );
   }
   @override
@@ -1361,6 +1394,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       'continue_minutes': serializer.toJson<int>(continueMinutes),
       'first_day_of_week': serializer.toJson<int>(firstDayOfWeek),
       'long_run_minutes': serializer.toJson<int>(longRunMinutes),
+      'track_active_time': serializer.toJson<int>(trackActiveTime),
     };
   }
 
@@ -1373,6 +1407,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     int? continueMinutes,
     int? firstDayOfWeek,
     int? longRunMinutes,
+    int? trackActiveTime,
   }) => SettingsRowData(
     id: id ?? this.id,
     snapMinutes: snapMinutes ?? this.snapMinutes,
@@ -1382,6 +1417,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     continueMinutes: continueMinutes ?? this.continueMinutes,
     firstDayOfWeek: firstDayOfWeek ?? this.firstDayOfWeek,
     longRunMinutes: longRunMinutes ?? this.longRunMinutes,
+    trackActiveTime: trackActiveTime ?? this.trackActiveTime,
   );
   SettingsRowData copyWithCompanion(SettingsRowCompanion data) {
     return SettingsRowData(
@@ -1405,6 +1441,9 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
       longRunMinutes: data.longRunMinutes.present
           ? data.longRunMinutes.value
           : this.longRunMinutes,
+      trackActiveTime: data.trackActiveTime.present
+          ? data.trackActiveTime.value
+          : this.trackActiveTime,
     );
   }
 
@@ -1418,7 +1457,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
           ..write('pixelsPerHour: $pixelsPerHour, ')
           ..write('continueMinutes: $continueMinutes, ')
           ..write('firstDayOfWeek: $firstDayOfWeek, ')
-          ..write('longRunMinutes: $longRunMinutes')
+          ..write('longRunMinutes: $longRunMinutes, ')
+          ..write('trackActiveTime: $trackActiveTime')
           ..write(')'))
         .toString();
   }
@@ -1433,6 +1473,7 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
     continueMinutes,
     firstDayOfWeek,
     longRunMinutes,
+    trackActiveTime,
   );
   @override
   bool operator ==(Object other) =>
@@ -1445,7 +1486,8 @@ class SettingsRowData extends DataClass implements Insertable<SettingsRowData> {
           other.pixelsPerHour == this.pixelsPerHour &&
           other.continueMinutes == this.continueMinutes &&
           other.firstDayOfWeek == this.firstDayOfWeek &&
-          other.longRunMinutes == this.longRunMinutes);
+          other.longRunMinutes == this.longRunMinutes &&
+          other.trackActiveTime == this.trackActiveTime);
 }
 
 class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
@@ -1457,6 +1499,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
   final Value<int> continueMinutes;
   final Value<int> firstDayOfWeek;
   final Value<int> longRunMinutes;
+  final Value<int> trackActiveTime;
   const SettingsRowCompanion({
     this.id = const Value.absent(),
     this.snapMinutes = const Value.absent(),
@@ -1466,6 +1509,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     this.continueMinutes = const Value.absent(),
     this.firstDayOfWeek = const Value.absent(),
     this.longRunMinutes = const Value.absent(),
+    this.trackActiveTime = const Value.absent(),
   });
   SettingsRowCompanion.insert({
     this.id = const Value.absent(),
@@ -1476,6 +1520,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     this.continueMinutes = const Value.absent(),
     this.firstDayOfWeek = const Value.absent(),
     this.longRunMinutes = const Value.absent(),
+    this.trackActiveTime = const Value.absent(),
   });
   static Insertable<SettingsRowData> custom({
     Expression<int>? id,
@@ -1486,6 +1531,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     Expression<int>? continueMinutes,
     Expression<int>? firstDayOfWeek,
     Expression<int>? longRunMinutes,
+    Expression<int>? trackActiveTime,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1496,6 +1542,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
       if (continueMinutes != null) 'continue_minutes': continueMinutes,
       if (firstDayOfWeek != null) 'first_day_of_week': firstDayOfWeek,
       if (longRunMinutes != null) 'long_run_minutes': longRunMinutes,
+      if (trackActiveTime != null) 'track_active_time': trackActiveTime,
     });
   }
 
@@ -1508,6 +1555,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     Value<int>? continueMinutes,
     Value<int>? firstDayOfWeek,
     Value<int>? longRunMinutes,
+    Value<int>? trackActiveTime,
   }) {
     return SettingsRowCompanion(
       id: id ?? this.id,
@@ -1518,6 +1566,7 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
       continueMinutes: continueMinutes ?? this.continueMinutes,
       firstDayOfWeek: firstDayOfWeek ?? this.firstDayOfWeek,
       longRunMinutes: longRunMinutes ?? this.longRunMinutes,
+      trackActiveTime: trackActiveTime ?? this.trackActiveTime,
     );
   }
 
@@ -1548,6 +1597,9 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
     if (longRunMinutes.present) {
       map['long_run_minutes'] = Variable<int>(longRunMinutes.value);
     }
+    if (trackActiveTime.present) {
+      map['track_active_time'] = Variable<int>(trackActiveTime.value);
+    }
     return map;
   }
 
@@ -1561,7 +1613,552 @@ class SettingsRowCompanion extends UpdateCompanion<SettingsRowData> {
           ..write('pixelsPerHour: $pixelsPerHour, ')
           ..write('continueMinutes: $continueMinutes, ')
           ..write('firstDayOfWeek: $firstDayOfWeek, ')
-          ..write('longRunMinutes: $longRunMinutes')
+          ..write('longRunMinutes: $longRunMinutes, ')
+          ..write('trackActiveTime: $trackActiveTime')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class ActiveSessions extends Table
+    with TableInfo<ActiveSessions, ActiveSessionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  ActiveSessions(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL PRIMARY KEY',
+  );
+  static const VerificationMeta _startUtcMeta = const VerificationMeta(
+    'startUtc',
+  );
+  late final GeneratedColumn<int> startUtc = GeneratedColumn<int>(
+    'start_utc',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _endUtcMeta = const VerificationMeta('endUtc');
+  late final GeneratedColumn<int> endUtc = GeneratedColumn<int>(
+    'end_utc',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _lastSeenUtcMeta = const VerificationMeta(
+    'lastSeenUtc',
+  );
+  late final GeneratedColumn<int> lastSeenUtc = GeneratedColumn<int>(
+    'last_seen_utc',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _endReasonMeta = const VerificationMeta(
+    'endReason',
+  );
+  late final GeneratedColumn<String> endReason = GeneratedColumn<String>(
+    'end_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _tzNameMeta = const VerificationMeta('tzName');
+  late final GeneratedColumn<String> tzName = GeneratedColumn<String>(
+    'tz_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _isOpenMeta = const VerificationMeta('isOpen');
+  late final GeneratedColumn<int> isOpen = GeneratedColumn<int>(
+    'is_open',
+    aliasedName,
+    true,
+    generatedAs: GeneratedAs(
+      const CustomExpression('CASE WHEN end_utc IS NULL THEN 1 END'),
+      false,
+    ),
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints:
+        'GENERATED ALWAYS AS (CASE WHEN end_utc IS NULL THEN 1 END) VIRTUAL',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    startUtc,
+    endUtc,
+    lastSeenUtc,
+    endReason,
+    tzName,
+    createdAt,
+    updatedAt,
+    isOpen,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'active_sessions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ActiveSessionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('start_utc')) {
+      context.handle(
+        _startUtcMeta,
+        startUtc.isAcceptableOrUnknown(data['start_utc']!, _startUtcMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startUtcMeta);
+    }
+    if (data.containsKey('end_utc')) {
+      context.handle(
+        _endUtcMeta,
+        endUtc.isAcceptableOrUnknown(data['end_utc']!, _endUtcMeta),
+      );
+    }
+    if (data.containsKey('last_seen_utc')) {
+      context.handle(
+        _lastSeenUtcMeta,
+        lastSeenUtc.isAcceptableOrUnknown(
+          data['last_seen_utc']!,
+          _lastSeenUtcMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lastSeenUtcMeta);
+    }
+    if (data.containsKey('end_reason')) {
+      context.handle(
+        _endReasonMeta,
+        endReason.isAcceptableOrUnknown(data['end_reason']!, _endReasonMeta),
+      );
+    }
+    if (data.containsKey('tz_name')) {
+      context.handle(
+        _tzNameMeta,
+        tzName.isAcceptableOrUnknown(data['tz_name']!, _tzNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_tzNameMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('is_open')) {
+      context.handle(
+        _isOpenMeta,
+        isOpen.isAcceptableOrUnknown(data['is_open']!, _isOpenMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ActiveSessionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ActiveSessionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      startUtc: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start_utc'],
+      )!,
+      endUtc: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}end_utc'],
+      ),
+      lastSeenUtc: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_seen_utc'],
+      )!,
+      endReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}end_reason'],
+      ),
+      tzName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tz_name'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      isOpen: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}is_open'],
+      ),
+    );
+  }
+
+  @override
+  ActiveSessions createAlias(String alias) {
+    return ActiveSessions(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+    'CHECK(end_utc IS NULL OR end_utc > start_utc)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class ActiveSessionRow extends DataClass
+    implements Insertable<ActiveSessionRow> {
+  final String id;
+  final int startUtc;
+  final int? endUtc;
+  final int lastSeenUtc;
+  final String? endReason;
+  final String tzName;
+  final int createdAt;
+  final int updatedAt;
+
+  /// 1 only while this row is the open session; the same trick as is_running.
+  final int? isOpen;
+  const ActiveSessionRow({
+    required this.id,
+    required this.startUtc,
+    this.endUtc,
+    required this.lastSeenUtc,
+    this.endReason,
+    required this.tzName,
+    required this.createdAt,
+    required this.updatedAt,
+    this.isOpen,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['start_utc'] = Variable<int>(startUtc);
+    if (!nullToAbsent || endUtc != null) {
+      map['end_utc'] = Variable<int>(endUtc);
+    }
+    map['last_seen_utc'] = Variable<int>(lastSeenUtc);
+    if (!nullToAbsent || endReason != null) {
+      map['end_reason'] = Variable<String>(endReason);
+    }
+    map['tz_name'] = Variable<String>(tzName);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  ActiveSessionsCompanion toCompanion(bool nullToAbsent) {
+    return ActiveSessionsCompanion(
+      id: Value(id),
+      startUtc: Value(startUtc),
+      endUtc: endUtc == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endUtc),
+      lastSeenUtc: Value(lastSeenUtc),
+      endReason: endReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endReason),
+      tzName: Value(tzName),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory ActiveSessionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ActiveSessionRow(
+      id: serializer.fromJson<String>(json['id']),
+      startUtc: serializer.fromJson<int>(json['start_utc']),
+      endUtc: serializer.fromJson<int?>(json['end_utc']),
+      lastSeenUtc: serializer.fromJson<int>(json['last_seen_utc']),
+      endReason: serializer.fromJson<String?>(json['end_reason']),
+      tzName: serializer.fromJson<String>(json['tz_name']),
+      createdAt: serializer.fromJson<int>(json['created_at']),
+      updatedAt: serializer.fromJson<int>(json['updated_at']),
+      isOpen: serializer.fromJson<int?>(json['is_open']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'start_utc': serializer.toJson<int>(startUtc),
+      'end_utc': serializer.toJson<int?>(endUtc),
+      'last_seen_utc': serializer.toJson<int>(lastSeenUtc),
+      'end_reason': serializer.toJson<String?>(endReason),
+      'tz_name': serializer.toJson<String>(tzName),
+      'created_at': serializer.toJson<int>(createdAt),
+      'updated_at': serializer.toJson<int>(updatedAt),
+      'is_open': serializer.toJson<int?>(isOpen),
+    };
+  }
+
+  ActiveSessionRow copyWith({
+    String? id,
+    int? startUtc,
+    Value<int?> endUtc = const Value.absent(),
+    int? lastSeenUtc,
+    Value<String?> endReason = const Value.absent(),
+    String? tzName,
+    int? createdAt,
+    int? updatedAt,
+    Value<int?> isOpen = const Value.absent(),
+  }) => ActiveSessionRow(
+    id: id ?? this.id,
+    startUtc: startUtc ?? this.startUtc,
+    endUtc: endUtc.present ? endUtc.value : this.endUtc,
+    lastSeenUtc: lastSeenUtc ?? this.lastSeenUtc,
+    endReason: endReason.present ? endReason.value : this.endReason,
+    tzName: tzName ?? this.tzName,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    isOpen: isOpen.present ? isOpen.value : this.isOpen,
+  );
+  @override
+  String toString() {
+    return (StringBuffer('ActiveSessionRow(')
+          ..write('id: $id, ')
+          ..write('startUtc: $startUtc, ')
+          ..write('endUtc: $endUtc, ')
+          ..write('lastSeenUtc: $lastSeenUtc, ')
+          ..write('endReason: $endReason, ')
+          ..write('tzName: $tzName, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('isOpen: $isOpen')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    startUtc,
+    endUtc,
+    lastSeenUtc,
+    endReason,
+    tzName,
+    createdAt,
+    updatedAt,
+    isOpen,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ActiveSessionRow &&
+          other.id == this.id &&
+          other.startUtc == this.startUtc &&
+          other.endUtc == this.endUtc &&
+          other.lastSeenUtc == this.lastSeenUtc &&
+          other.endReason == this.endReason &&
+          other.tzName == this.tzName &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.isOpen == this.isOpen);
+}
+
+class ActiveSessionsCompanion extends UpdateCompanion<ActiveSessionRow> {
+  final Value<String> id;
+  final Value<int> startUtc;
+  final Value<int?> endUtc;
+  final Value<int> lastSeenUtc;
+  final Value<String?> endReason;
+  final Value<String> tzName;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const ActiveSessionsCompanion({
+    this.id = const Value.absent(),
+    this.startUtc = const Value.absent(),
+    this.endUtc = const Value.absent(),
+    this.lastSeenUtc = const Value.absent(),
+    this.endReason = const Value.absent(),
+    this.tzName = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ActiveSessionsCompanion.insert({
+    required String id,
+    required int startUtc,
+    this.endUtc = const Value.absent(),
+    required int lastSeenUtc,
+    this.endReason = const Value.absent(),
+    required String tzName,
+    required int createdAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       startUtc = Value(startUtc),
+       lastSeenUtc = Value(lastSeenUtc),
+       tzName = Value(tzName),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<ActiveSessionRow> custom({
+    Expression<String>? id,
+    Expression<int>? startUtc,
+    Expression<int>? endUtc,
+    Expression<int>? lastSeenUtc,
+    Expression<String>? endReason,
+    Expression<String>? tzName,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (startUtc != null) 'start_utc': startUtc,
+      if (endUtc != null) 'end_utc': endUtc,
+      if (lastSeenUtc != null) 'last_seen_utc': lastSeenUtc,
+      if (endReason != null) 'end_reason': endReason,
+      if (tzName != null) 'tz_name': tzName,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ActiveSessionsCompanion copyWith({
+    Value<String>? id,
+    Value<int>? startUtc,
+    Value<int?>? endUtc,
+    Value<int>? lastSeenUtc,
+    Value<String?>? endReason,
+    Value<String>? tzName,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return ActiveSessionsCompanion(
+      id: id ?? this.id,
+      startUtc: startUtc ?? this.startUtc,
+      endUtc: endUtc ?? this.endUtc,
+      lastSeenUtc: lastSeenUtc ?? this.lastSeenUtc,
+      endReason: endReason ?? this.endReason,
+      tzName: tzName ?? this.tzName,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (startUtc.present) {
+      map['start_utc'] = Variable<int>(startUtc.value);
+    }
+    if (endUtc.present) {
+      map['end_utc'] = Variable<int>(endUtc.value);
+    }
+    if (lastSeenUtc.present) {
+      map['last_seen_utc'] = Variable<int>(lastSeenUtc.value);
+    }
+    if (endReason.present) {
+      map['end_reason'] = Variable<String>(endReason.value);
+    }
+    if (tzName.present) {
+      map['tz_name'] = Variable<String>(tzName.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ActiveSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('startUtc: $startUtc, ')
+          ..write('endUtc: $endUtc, ')
+          ..write('lastSeenUtc: $lastSeenUtc, ')
+          ..write('endReason: $endReason, ')
+          ..write('tzName: $tzName, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -1585,6 +2182,15 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'CREATE INDEX ix_entries_activity_start ON time_entries (activity_id, start_utc)',
   );
   late final SettingsRow settingsRow = SettingsRow(this);
+  late final ActiveSessions activeSessions = ActiveSessions(this);
+  late final Index uxSessionsSingleOpen = Index(
+    'ux_sessions_single_open',
+    'CREATE UNIQUE INDEX ux_sessions_single_open ON active_sessions (is_open)',
+  );
+  late final Index ixSessionsStart = Index(
+    'ix_sessions_start',
+    'CREATE INDEX ix_sessions_start ON active_sessions (start_utc)',
+  );
   Selectable<TimeEntryRow> entriesInRange(int rangeEnd, int? rangeStart) {
     return customSelect(
       'SELECT * FROM time_entries WHERE deleted_at IS NULL AND start_utc < ?1 AND(end_utc IS NULL OR end_utc > ?2)ORDER BY start_utc',
@@ -1641,6 +2247,30 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     );
   }
 
+  Selectable<ActiveSessionRow> sessionsInRange(int rangeEnd, int? rangeStart) {
+    return customSelect(
+      'SELECT * FROM active_sessions WHERE start_utc < ?1 AND(end_utc IS NULL OR end_utc > ?2)ORDER BY start_utc',
+      variables: [Variable<int>(rangeEnd), Variable<int>(rangeStart)],
+      readsFrom: {this.activeSessions},
+    ).asyncMap(this.activeSessions.mapFromRow);
+  }
+
+  Selectable<ActiveSessionRow> openSession() {
+    return customSelect(
+      'SELECT * FROM active_sessions WHERE is_open = 1',
+      variables: [],
+      readsFrom: {this.activeSessions},
+    ).asyncMap(this.activeSessions.mapFromRow);
+  }
+
+  Selectable<ActiveSessionRow> lastClosedSession() {
+    return customSelect(
+      'SELECT * FROM active_sessions WHERE end_utc IS NOT NULL ORDER BY end_utc DESC LIMIT 1',
+      variables: [],
+      readsFrom: {this.activeSessions},
+    ).asyncMap(this.activeSessions.mapFromRow);
+  }
+
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1652,6 +2282,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     ixEntriesStart,
     ixEntriesActivityStart,
     settingsRow,
+    activeSessions,
+    uxSessionsSingleOpen,
+    ixSessionsStart,
   ];
 }
 
@@ -2396,6 +3029,7 @@ typedef $SettingsRowCreateCompanionBuilder = SettingsRowCompanion Function({
   Value<int> continueMinutes,
   Value<int> firstDayOfWeek,
   Value<int> longRunMinutes,
+  Value<int> trackActiveTime,
 });
 typedef $SettingsRowUpdateCompanionBuilder = SettingsRowCompanion Function({
   Value<int> id,
@@ -2406,6 +3040,7 @@ typedef $SettingsRowUpdateCompanionBuilder = SettingsRowCompanion Function({
   Value<int> continueMinutes,
   Value<int> firstDayOfWeek,
   Value<int> longRunMinutes,
+  Value<int> trackActiveTime,
 });
 
 class $SettingsRowFilterComposer extends Composer<_$AppDatabase, SettingsRow> {
@@ -2453,6 +3088,11 @@ class $SettingsRowFilterComposer extends Composer<_$AppDatabase, SettingsRow> {
 
   ColumnFilters<int> get longRunMinutes => $composableBuilder(
     column: $table.longRunMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get trackActiveTime => $composableBuilder(
+    column: $table.trackActiveTime,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -2505,6 +3145,11 @@ class $SettingsRowOrderingComposer
     column: $table.longRunMinutes,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get trackActiveTime => $composableBuilder(
+    column: $table.trackActiveTime,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $SettingsRowAnnotationComposer
@@ -2551,6 +3196,11 @@ class $SettingsRowAnnotationComposer
     column: $table.longRunMinutes,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get trackActiveTime => $composableBuilder(
+    column: $table.trackActiveTime,
+    builder: (column) => column,
+  );
 }
 
 class $SettingsRowTableManager
@@ -2592,6 +3242,7 @@ class $SettingsRowTableManager
                 Value<int> continueMinutes = const Value.absent(),
                 Value<int> firstDayOfWeek = const Value.absent(),
                 Value<int> longRunMinutes = const Value.absent(),
+                Value<int> trackActiveTime = const Value.absent(),
               }) => SettingsRowCompanion(
                 id: id,
                 snapMinutes: snapMinutes,
@@ -2601,6 +3252,7 @@ class $SettingsRowTableManager
                 continueMinutes: continueMinutes,
                 firstDayOfWeek: firstDayOfWeek,
                 longRunMinutes: longRunMinutes,
+                trackActiveTime: trackActiveTime,
               ),
           createCompanionCallback:
               ({
@@ -2612,6 +3264,7 @@ class $SettingsRowTableManager
                 Value<int> continueMinutes = const Value.absent(),
                 Value<int> firstDayOfWeek = const Value.absent(),
                 Value<int> longRunMinutes = const Value.absent(),
+                Value<int> trackActiveTime = const Value.absent(),
               }) => SettingsRowCompanion.insert(
                 id: id,
                 snapMinutes: snapMinutes,
@@ -2621,6 +3274,7 @@ class $SettingsRowTableManager
                 continueMinutes: continueMinutes,
                 firstDayOfWeek: firstDayOfWeek,
                 longRunMinutes: longRunMinutes,
+                trackActiveTime: trackActiveTime,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -2656,6 +3310,287 @@ typedef $SettingsRowProcessedTableManager =
       SettingsRowData,
       PrefetchHooks Function()
     >;
+typedef $ActiveSessionsCreateCompanionBuilder =
+    ActiveSessionsCompanion Function({
+      required String id,
+      required int startUtc,
+      Value<int?> endUtc,
+      required int lastSeenUtc,
+      Value<String?> endReason,
+      required String tzName,
+      required int createdAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $ActiveSessionsUpdateCompanionBuilder =
+    ActiveSessionsCompanion Function({
+      Value<String> id,
+      Value<int> startUtc,
+      Value<int?> endUtc,
+      Value<int> lastSeenUtc,
+      Value<String?> endReason,
+      Value<String> tzName,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $ActiveSessionsFilterComposer
+    extends Composer<_$AppDatabase, ActiveSessions> {
+  $ActiveSessionsFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get startUtc => $composableBuilder(
+    column: $table.startUtc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get endUtc => $composableBuilder(
+    column: $table.endUtc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastSeenUtc => $composableBuilder(
+    column: $table.lastSeenUtc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get endReason => $composableBuilder(
+    column: $table.endReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tzName => $composableBuilder(
+    column: $table.tzName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get isOpen => $composableBuilder(
+    column: $table.isOpen,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $ActiveSessionsOrderingComposer
+    extends Composer<_$AppDatabase, ActiveSessions> {
+  $ActiveSessionsOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get startUtc => $composableBuilder(
+    column: $table.startUtc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get endUtc => $composableBuilder(
+    column: $table.endUtc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastSeenUtc => $composableBuilder(
+    column: $table.lastSeenUtc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endReason => $composableBuilder(
+    column: $table.endReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tzName => $composableBuilder(
+    column: $table.tzName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get isOpen => $composableBuilder(
+    column: $table.isOpen,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $ActiveSessionsAnnotationComposer
+    extends Composer<_$AppDatabase, ActiveSessions> {
+  $ActiveSessionsAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get startUtc =>
+      $composableBuilder(column: $table.startUtc, builder: (column) => column);
+
+  GeneratedColumn<int> get endUtc =>
+      $composableBuilder(column: $table.endUtc, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSeenUtc => $composableBuilder(
+    column: $table.lastSeenUtc,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get endReason =>
+      $composableBuilder(column: $table.endReason, builder: (column) => column);
+
+  GeneratedColumn<String> get tzName =>
+      $composableBuilder(column: $table.tzName, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get isOpen =>
+      $composableBuilder(column: $table.isOpen, builder: (column) => column);
+}
+
+class $ActiveSessionsTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          ActiveSessions,
+          ActiveSessionRow,
+          $ActiveSessionsFilterComposer,
+          $ActiveSessionsOrderingComposer,
+          $ActiveSessionsAnnotationComposer,
+          $ActiveSessionsCreateCompanionBuilder,
+          $ActiveSessionsUpdateCompanionBuilder,
+          (
+            ActiveSessionRow,
+            BaseReferences<_$AppDatabase, ActiveSessions, ActiveSessionRow>,
+          ),
+          ActiveSessionRow,
+          PrefetchHooks Function()
+        > {
+  $ActiveSessionsTableManager(_$AppDatabase db, ActiveSessions table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $ActiveSessionsFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $ActiveSessionsOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $ActiveSessionsAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> startUtc = const Value.absent(),
+                Value<int?> endUtc = const Value.absent(),
+                Value<int> lastSeenUtc = const Value.absent(),
+                Value<String?> endReason = const Value.absent(),
+                Value<String> tzName = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ActiveSessionsCompanion(
+                id: id,
+                startUtc: startUtc,
+                endUtc: endUtc,
+                lastSeenUtc: lastSeenUtc,
+                endReason: endReason,
+                tzName: tzName,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required int startUtc,
+                Value<int?> endUtc = const Value.absent(),
+                required int lastSeenUtc,
+                Value<String?> endReason = const Value.absent(),
+                required String tzName,
+                required int createdAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ActiveSessionsCompanion.insert(
+                id: id,
+                startUtc: startUtc,
+                endUtc: endUtc,
+                lastSeenUtc: lastSeenUtc,
+                endReason: endReason,
+                tzName: tzName,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<ActiveSessions, ActiveSessionRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    ActiveSessions,
+                    ActiveSessionRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $ActiveSessionsProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      ActiveSessions,
+      ActiveSessionRow,
+      $ActiveSessionsFilterComposer,
+      $ActiveSessionsOrderingComposer,
+      $ActiveSessionsAnnotationComposer,
+      $ActiveSessionsCreateCompanionBuilder,
+      $ActiveSessionsUpdateCompanionBuilder,
+      (
+        ActiveSessionRow,
+        BaseReferences<_$AppDatabase, ActiveSessions, ActiveSessionRow>,
+      ),
+      ActiveSessionRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2666,6 +3601,8 @@ class $AppDatabaseManager {
       $TimeEntriesTableManager(_db, _db.timeEntries);
   $SettingsRowTableManager get settingsRow =>
       $SettingsRowTableManager(_db, _db.settingsRow);
+  $ActiveSessionsTableManager get activeSessions =>
+      $ActiveSessionsTableManager(_db, _db.activeSessions);
 }
 
 class ActivityUsageSinceResult {

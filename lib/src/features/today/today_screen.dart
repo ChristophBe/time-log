@@ -13,6 +13,7 @@ import '../calendar/calendar_providers.dart';
 import '../calendar/day_calendar.dart';
 import '../calendar/zoom_control.dart';
 import '../entry/entry_sheet.dart';
+import '../presence/presence_providers.dart';
 import 'day_header.dart';
 import 'resume_action.dart';
 import 'action_feedback.dart';
@@ -380,6 +381,8 @@ class _DayBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final timeline = ref.watch(dayTimelineProvider);
+    final hasSessions =
+        ref.watch(daySessionsProvider).value?.isNotEmpty ?? false;
 
     return GestureDetector(
       onHorizontalDragEnd: (details) {
@@ -392,7 +395,9 @@ class _DayBody extends ConsumerWidget {
       },
       // A day with no entries is one big empty axis, which tells the user
       // nothing. Say so in words instead.
-      child: timeline.isEmpty
+      // Active sessions count as something to show: a day of them and no
+      // entries is the day with the most to log (SPEC §8.2).
+      child: timeline.isEmpty && !hasSessions
           ? Padding(
               padding: EdgeInsets.only(top: topInset),
               child: const _EmptyDay(),

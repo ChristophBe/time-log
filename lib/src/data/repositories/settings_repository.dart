@@ -38,6 +38,7 @@ class SettingsRepository {
           continueMinutes: Value(settings.continueWindow.inMinutes),
           firstDayOfWeek: Value(settings.firstDayOfWeek),
           longRunMinutes: Value(settings.longRun.inMinutes),
+          trackActiveTime: Value(settings.trackActiveTime ? 1 : 0),
         ),
       );
 
@@ -57,6 +58,7 @@ class SettingsRepository {
       continueWindow: Duration(minutes: row.continueMinutes),
       firstDayOfWeek: row.firstDayOfWeek,
       longRun: Duration(minutes: row.longRunMinutes),
+      trackActiveTime: row.trackActiveTime != 0,
     );
   }
 }

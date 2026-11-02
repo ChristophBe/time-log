@@ -45,8 +45,28 @@ CREATE TABLE settings_row (
   -- weekday constants.
   first_day_of_week INTEGER NOT NULL DEFAULT 0,
   long_run_minutes  INTEGER NOT NULL DEFAULT 480,
+  -- Added in schema v3. Off until asked for (SPEC §9.9).
+  track_active_time INTEGER NOT NULL DEFAULT 0,
   CHECK (id = 1)
 ) AS SettingsRowData;
+
+CREATE TABLE active_sessions (
+  id            TEXT    NOT NULL PRIMARY KEY,
+  start_utc     INTEGER NOT NULL,
+  end_utc       INTEGER,
+  last_seen_utc INTEGER NOT NULL,
+  end_reason    TEXT,
+  tz_name       TEXT    NOT NULL,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  -- 1 only while this row is the open session; the same trick as is_running.
+  is_open       INTEGER GENERATED ALWAYS AS (
+                  CASE WHEN end_utc IS NULL THEN 1 END) VIRTUAL,
+  CHECK (end_utc IS NULL OR end_utc > start_utc)
+) AS ActiveSessionRow;
+
+CREATE UNIQUE INDEX ux_sessions_single_open ON active_sessions (is_open);
+CREATE        INDEX ix_sessions_start       ON active_sessions (start_utc);
 
 -- Entries overlapping the half-open window [:rangeStart, :rangeEnd), oldest first.
 -- A running entry is treated as reaching to infinity, hence the end_utc IS NULL arm.
@@ -80,3 +100,18 @@ activityUsageSince:
   FROM activities a
   INNER JOIN time_entries e ON e.activity_id = a.id
   WHERE a.archived = 0 AND e.deleted_at IS NULL AND e.start_utc >= :since;
+
+-- Sessions overlapping the half-open window [:rangeStart, :rangeEnd), oldest first.
+sessionsInRange:
+  SELECT * FROM active_sessions
+  WHERE start_utc < :rangeEnd
+    AND (end_utc IS NULL OR end_utc > :rangeStart)
+  ORDER BY start_utc;
+
+openSession:
+  SELECT * FROM active_sessions WHERE is_open = 1;
+
+lastClosedSession:
+  SELECT * FROM active_sessions
+  WHERE end_utc IS NOT NULL
+  ORDER BY end_utc DESC LIMIT 1;
