@@ -304,7 +304,18 @@ void main() {
           entryId: any(named: 'entryId'),
           atUtc: any(named: 'atUtc'),
         ),
-      ).thenAnswer((_) async => UndoToken('x', () async {}));
+      ).thenAnswer(
+        (_) async => (
+          second: TimeEntry(
+            id: 'e2',
+            activityId: entry.activityId,
+            startUtc: DateTime.utc(2026, 3, 10, 13, 30),
+            endUtc: entry.endUtc,
+            tzName: entry.tzName,
+          ),
+          undo: UndoToken('x', () async {}),
+        ),
+      );
       when(
         () => h.writer.setEntryNote(
           entryId: any(named: 'entryId'),
@@ -536,6 +547,32 @@ void main() {
       ).called(1);
     });
 
+    testWidgets('a split opens the sheet on the second half (SPEC §6.6)', (
+      tester,
+    ) async {
+      await pumpSheet(tester, surfaceSize: const Size(700, 900));
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Split here…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<EntrySheet>(find.byType(EntrySheet)).entry.id, 'e2');
+    });
+
+    testWidgets('the activity name shows it can be edited', (tester) async {
+      await pumpSheet(tester);
+
+      expect(
+        find.descendant(
+          of: find.byType(EntrySheet),
+          matching: find.byIcon(Icons.edit_outlined),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Change activity'), findsOneWidget);
+    });
+
     testWidgets('a cancelled split cuts nothing', (tester) async {
       final h = await pumpSheet(tester, surfaceSize: const Size(700, 900));
 
@@ -585,6 +622,7 @@ void main() {
     Future<WidgetHarness> pumpPicker(
       WidgetTester tester, {
       TimeEntry? target,
+      bool withUnsavedStart = false,
     }) async {
       final h = WidgetHarness(
         now: now,
@@ -612,6 +650,13 @@ void main() {
           note: any(named: 'note'),
         ),
       ).thenAnswer((_) async => UndoToken('x', () async {}));
+      when(
+        () => h.writer.setEntryTimes(
+          entryId: any(named: 'entryId'),
+          startUtc: any(named: 'startUtc'),
+          endUtc: any(named: 'endUtc'),
+        ),
+      ).thenAnswer((_) async => UndoToken('x', () async {}));
       await h.pump(
         tester,
         Scaffold(
@@ -625,6 +670,10 @@ void main() {
       );
       await tester.tap(find.text('open sheet'));
       await tester.pumpAndSettle();
+      if (withUnsavedStart) {
+        await tester.tap(find.byTooltip('Start 5 minutes later'));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.text('Writing specs'));
       await tester.pumpAndSettle();
       return h;
@@ -680,6 +729,43 @@ void main() {
         );
       },
     );
+
+    testWidgets('a relabel keeps unsaved times, and Save still applies them', (
+      tester,
+    ) async {
+      final h = await pumpPicker(tester, withUnsavedStart: true);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('picker-suggestion-a2')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(EntrySheet),
+        findsOneWidget,
+        reason: 'SPEC §8.4: closing would silently drop the edit',
+      );
+      expect(
+        find.descendant(
+          of: find.byType(EntrySheet),
+          matching: find.text('Email'),
+        ),
+        findsOneWidget,
+        reason: 'the header follows the relabel',
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => h.writer.setEntryTimes(
+          entryId: 'e1',
+          startUtc: entry.startUtc.add(const Duration(minutes: 5)),
+          endUtc: entry.endUtc,
+        ),
+      ).called(1);
+      expect(find.byType(EntrySheet), findsNothing);
+    });
 
     testWidgets('a typed name that matches nothing creates it', (tester) async {
       final h = await pumpPicker(tester);

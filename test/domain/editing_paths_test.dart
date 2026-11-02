@@ -281,10 +281,11 @@ void main() {
     await h.writer.stop();
     final before = shape(await h.entries());
 
-    final undo = await h.writer.split(
+    final (:second, :undo) = await h.writer.split(
       entryId: entry.entryId,
       atUtc: DateTime.utc(2026, 3, 10, 10),
     );
+    expect(second.startUtc, DateTime.utc(2026, 3, 10, 10));
     expect(await h.entries(), hasLength(2));
 
     await undo.undo();

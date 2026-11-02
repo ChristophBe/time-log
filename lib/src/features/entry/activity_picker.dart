@@ -28,20 +28,18 @@ import 'entry_providers.dart';
 /// this is the one that is usually meant; the other one is a step further in and
 /// says what it will touch.
 ///
-/// Returns true when the entry was relabelled, so the caller can close the sheet
-/// it was opened from.
-Future<bool> showActivityPicker(
+/// Returns the activity the entry now belongs to, or null when it was not
+/// relabelled, so the caller can react to the change.
+Future<Activity?> showActivityPicker(
   BuildContext context, {
   required TimeEntry entry,
   required Activity current,
-}) async =>
-    await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => ActivityPicker(entry: entry, current: current),
-    ) ??
-    false;
+}) => showModalBottomSheet<Activity>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  builder: (_) => ActivityPicker(entry: entry, current: current),
+);
 
 class ActivityPicker extends ConsumerStatefulWidget {
   const ActivityPicker({required this.entry, required this.current, super.key});
@@ -82,7 +80,7 @@ class _ActivityPickerState extends ConsumerState<ActivityPicker> {
       final undo = result.undo;
       // Nothing was written, so there is nothing to announce and nothing for
       // the entry sheet to close over (SPEC §6.10).
-      Navigator.of(context).pop(undo != null);
+      Navigator.of(context).pop(undo == null ? null : result.activity);
       if (undo == null) return;
       showUndoableFeedback(
         context,
@@ -97,7 +95,7 @@ class _ActivityPickerState extends ConsumerState<ActivityPicker> {
   /// SPEC §6.7, reached from here so that the two edits are told apart at the
   /// moment of choosing rather than guessed at from the entry sheet.
   void _rename() {
-    Navigator.of(context).pop(false);
+    Navigator.of(context).pop();
     showActivityEditor(context, ref, widget.current);
   }
 

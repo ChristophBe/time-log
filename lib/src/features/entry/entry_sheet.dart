@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,6 +35,10 @@ Future<void> showEntrySheet(BuildContext context, TimeEntry entry) =>
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      // Above the shell's Scaffold, not inside its body: there the SnackBar is
+      // painted over the sheet, covering Save and offering an Undo that can
+      // change or remove the entry this sheet is still showing.
+      useRootNavigator: true,
       builder: (_) => EntrySheet(entry: entry),
     );
 
@@ -48,6 +54,10 @@ class EntrySheet extends ConsumerStatefulWidget {
 class _EntrySheetState extends ConsumerState<EntrySheet> {
   late DateTime _start = widget.entry.startUtc;
   late DateTime? _end = widget.entry.endUtc;
+
+  /// Follows a relabel made while times are unsaved, when the sheet stays open
+  /// and [widget.entry] still carries the old activity (SPEC §8.4).
+  late String _activityId = widget.entry.activityId;
   late final TextEditingController _note = TextEditingController(
     text: widget.entry.note ?? '',
   );
@@ -164,17 +174,24 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
 
   /// SPEC §6.10: relabel this one span, leaving its times and note alone.
   ///
-  /// The sheet closes once the entry has moved, because its header is built
-  /// from the entry it was handed and would keep showing the old name and the
-  /// old spine colour. Every other committing action here closes it too; the
-  /// note is the exception, and the note keeps its text in a controller.
+  /// The sheet closes once the entry has moved, as every other committing action
+  /// here does -- unless times are unsaved, because closing would silently drop
+  /// them. It then stays open on the new activity so Save still works.
+  ///
+  /// Staying open cannot leave the header stale: the relabel's Undo sits behind
+  /// this sheet's barrier, and Save or a note commit replaces it (SPEC §7.5).
   Future<void> _changeActivity(Activity activity) async {
     final changed = await showActivityPicker(
       context,
       entry: widget.entry,
       current: activity,
     );
-    if (changed && mounted) Navigator.of(context).pop();
+    if (changed == null || !mounted) return;
+    if (_changed) {
+      setState(() => _activityId = changed.id);
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   /// SPEC §6.6: split at a chosen instant, not at a fixed one.
@@ -205,10 +222,14 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
 
     final writer = ref.read(timelineWriterProvider);
     try {
-      final undo = await writer.split(entryId: widget.entry.id, atUtc: at);
+      final result = await writer.split(entryId: widget.entry.id, atUtc: at);
       if (!mounted) return;
-      Navigator.of(context).pop();
-      showUndoableFeedback(context, message: 'Entry split', undo: undo);
+      // The navigator outlives this sheet, whose own context is on its way out.
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      showUndoableFeedback(context, message: 'Entry split', undo: result.undo);
+      // SPEC §6.6: the second half is usually the one being retro-labelled.
+      unawaited(showEntrySheet(navigator.context, result.second));
     } on InvariantViolation catch (error) {
       if (!mounted) return;
       showUndoableFeedback(context, message: error.detail, undo: null);
@@ -219,7 +240,7 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
   Widget build(BuildContext context) {
     final activities =
         ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{};
-    final activity = activities[widget.entry.activityId];
+    final activity = activities[_activityId];
     final settings =
         ref.watch(appSettingsProvider).value ?? const AppSettings();
     final now = ref.watch(appClockProvider).nowUtc();
@@ -277,25 +298,49 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
                   Expanded(
                     // Tap to relabel this entry, or -- a step further in --
                     // to rename the activity itself (SPEC §8.4, §6.10, §6.7).
-                    child: InkWell(
-                      onTap: activity == null
-                          ? null
-                          : () => _changeActivity(activity),
-                      borderRadius: Radii.smAll,
-                      child: Semantics(
-                        button: activity != null,
-                        hint: activity == null
+                    child: Tooltip(
+                      message: 'Change activity',
+                      // The hint below already says this, and more.
+                      excludeFromSemantics: true,
+                      child: InkWell(
+                        onTap: activity == null
                             ? null
-                            : 'Double tap to change, rename or recolour',
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: Insets.md,
-                          ),
-                          child: Text(
-                            activity?.name ?? 'Activity',
-                            style: Theme.of(context).textTheme.titleLarge,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            : () => _changeActivity(activity),
+                        borderRadius: Radii.smAll,
+                        child: Semantics(
+                          button: activity != null,
+                          hint: activity == null
+                              ? null
+                              : 'Double tap to change, rename or recolour',
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: Insets.md,
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                Flexible(
+                                  child: Text(
+                                    activity?.name ?? 'Activity',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                // A title looks read-only; this says it is not.
+                                if (activity != null) ...<Widget>[
+                                  const SizedBox(width: Insets.sm),
+                                  Icon(
+                                    Icons.edit_outlined,
+                                    size: 18,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
