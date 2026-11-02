@@ -42,7 +42,7 @@ jobs:
           cache: true
       # Where sqlite3's native-asset hook parks the prebuilt library it fetches
       # from GitHub releases. Just this subtree: all of .dart_tool is ~1 GB.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .dart_tool/hooks_runner
           key: hooks-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
@@ -70,7 +70,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .dart_tool/hooks_runner
           key: hooks-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
