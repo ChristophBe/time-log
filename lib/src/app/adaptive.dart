@@ -9,9 +9,11 @@ import 'platform_style.dart';
 /// Pickers in the idiom of the platform the app is a guest on (SPEC §9.8).
 ///
 /// Apple platforms expect a wheel in a popup, Material a dial and a calendar
-/// grid. Both return the same thing, so SPEC §7's clamping and the conflict
-/// text do not know or care which one drew it — the one place an adaptive UI
-/// is allowed to differ is how it looks and feels, never what it means.
+/// grid. The exception is the time on macOS, which gets the dial: see
+/// [showAdaptiveTimePicker]. Both return the same thing, so SPEC §7's clamping
+/// and the conflict text do not know or care which one drew it — the one place
+/// an adaptive UI is allowed to differ is how it looks and feels, never what it
+/// means.
 
 /// A time, asked for in the platform's own way.
 Future<TimeOfDay?> showAdaptiveTimePicker(
@@ -20,11 +22,19 @@ Future<TimeOfDay?> showAdaptiveTimePicker(
   required String helpText,
   required bool use24h,
 }) {
-  if (!PlatformStyle.from(context).isApple) {
+  // macOS is Apple-flavoured, but a wheel is a touch control: it is poor with a
+  // pointer, and the dial brings a keyboard entry mode with it.
+  if (Theme.of(context).platform != TargetPlatform.iOS) {
     return showTimePicker(
       context: context,
       initialTime: initial,
       helpText: helpText,
+      // The dial takes its clock format from MediaQuery rather than an
+      // argument, and would otherwise follow the system over the app's setting.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
+        child: child!,
+      ),
     );
   }
 

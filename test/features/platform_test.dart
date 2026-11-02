@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:time_log/src/app/adaptive.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
 import 'package:time_log/src/features/entry/entry_sheet.dart';
@@ -20,6 +21,13 @@ import '../support/pump_app.dart';
 /// be the one that was only assumed to work.
 final _apple = TargetPlatformVariant(<TargetPlatform>{
   TargetPlatform.iOS,
+  TargetPlatform.macOS,
+});
+
+/// Where the time picker is a dial: macOS leaves the Apple idiom for this one
+/// control, because a wheel is a touch control.
+final _dial = TargetPlatformVariant(<TargetPlatform>{
+  TargetPlatform.android,
   TargetPlatform.macOS,
 });
 
@@ -59,7 +67,7 @@ void main() {
   }
 
   group('the time picker is the platform\'s own (SPEC §8.4)', () {
-    testWidgets('a wheel on Apple', (tester) async {
+    testWidgets('a wheel on iOS', (tester) async {
       await pumpSheet(tester);
       await tester.tap(find.widgetWithText(TextButton, '14:00'));
       await tester.pumpAndSettle();
@@ -71,16 +79,47 @@ void main() {
         findsNothing,
         reason: 'a dial is the wrong control on iOS',
       );
-    }, variant: _apple);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-    testWidgets('a dial on Material', (tester) async {
+    testWidgets('a dial on Material and macOS', (tester) async {
       await pumpSheet(tester);
       await tester.tap(find.widgetWithText(TextButton, '14:00'));
       await tester.pumpAndSettle();
 
       expect(find.byType(TimePickerDialog), findsOneWidget);
       expect(find.byType(CupertinoDatePicker), findsNothing);
-    });
+    }, variant: _dial);
+
+    testWidgets('the dial follows the app\'s clock setting', (tester) async {
+      Future<void> open({required bool use24h}) async {
+        await WidgetHarness(now: now).pump(
+          tester,
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAdaptiveTimePicker(
+                  context,
+                  initial: const TimeOfDay(hour: 14, minute: 0),
+                  helpText: 'Stop at',
+                  use24h: use24h,
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+      }
+
+      await open(use24h: true);
+      expect(find.text('PM'), findsNothing);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      await open(use24h: false);
+      expect(find.text('PM'), findsOneWidget);
+    }, variant: _dial);
 
     testWidgets('cancelling the wheel changes nothing', (tester) async {
       final h = await pumpSheet(tester);
@@ -97,7 +136,7 @@ void main() {
           endUtc: any(named: 'endUtc'),
         ),
       );
-    }, variant: _apple);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   });
 
   group('settings controls', () {
