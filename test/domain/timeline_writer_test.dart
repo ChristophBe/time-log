@@ -1,4 +1,6 @@
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_log/src/data/db/database.dart';
 import 'package:sqlite3/sqlite3.dart' show SqliteException;
 import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/timeline/day_window.dart';
@@ -517,6 +519,46 @@ void main() {
       );
       expect(after.note, 'chapter 3');
     });
+
+    for (final (label, name) in <(String, String)>[
+      ('an existing activity', 'Email'),
+      ('a new activity', 'Reading'),
+    ]) {
+      test(
+        'relabelLeavesTheActivityAndItsOtherEntriesAlone, to $label',
+        () async {
+          // SPEC §6.10 against §6.7: one span moves, and the activity it came
+          // from is not edited. Raw rows, so `updatedAt` is compared too.
+          final ids = await twoEntries();
+          final sibling = await h.writer.startByName(name: 'Writing specs');
+          h.clock.advance(const Duration(minutes: 30));
+          await h.writer.stop();
+          final source = await h.byId(ids.specs);
+
+          Future<List<TimeEntryRow>> others() => (h.db.select(
+            h.db.timeEntries,
+          )..where((t) => t.id.equals(ids.specs).not())).get();
+          Future<ActivityRow?> activity(String id) => (h.db.select(
+            h.db.activities,
+          )..where((t) => t.id.equals(id))).getSingleOrNull();
+
+          final othersBefore = await others();
+          final activityBefore = await activity(source.activityId);
+
+          h.clock.advance(const Duration(minutes: 1));
+          await h.writer.setEntryActivity(entryId: ids.specs, name: name);
+
+          expect(await h.activityNameOf(await h.byId(ids.specs)), name);
+          expect(await others(), othersBefore);
+          expect(await activity(source.activityId), activityBefore);
+          expect(
+            (await h.byId(sibling.entryId)).activityId,
+            source.activityId,
+            reason: 'the other entry still belongs to the original activity',
+          );
+        },
+      );
+    }
 
     test('relabelResolvesAnExistingActivityByNameKey', () async {
       final ids = await twoEntries();
