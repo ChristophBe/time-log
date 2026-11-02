@@ -100,8 +100,8 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
 
   Future<void> _pickTime({required bool isStart, required bool use24h}) async {
     final current = (isStart ? _start : _end)!.toLocal();
-    // A dial on Material, a wheel on Apple; the same TimeOfDay either way, so
-    // §7's clamping never learns which one was used.
+    // A dial on Material and macOS, a wheel on iOS; the same TimeOfDay either
+    // way, so §7's clamping never learns which one was used.
     final picked = await showAdaptiveTimePicker(
       context,
       initial: TimeOfDay.fromDateTime(current),

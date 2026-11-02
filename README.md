@@ -39,7 +39,7 @@ has the two commands.
 
 **On each platform it is a guest, not a tourist.** The identity above is the same everywhere; the
 manners are the host's. Apple platforms get Liquid Glass — translucent chrome that floats over the
-day, capsule controls, wheel pickers, Cupertino dialogs, a real macOS menu bar — Android gets
+day, capsule controls, wheel pickers (macOS takes the Material dial for times), Cupertino dialogs, a real macOS menu bar — Android gets
 Material with predictive back and edge-to-edge, Windows and Linux get their own density and corner
 radii. `lib/src/app/platform_style.dart` holds the numbers and `adaptive.dart` the controls that
 differ; SPEC §9.8 states which things may vary and which may not. `flutter test` pins the target

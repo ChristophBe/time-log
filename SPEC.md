@@ -837,6 +837,10 @@ Because the header floats, the day owns the full height and takes a top inset fr
 measured rather than written down: it moves with the text scale, with the running activity's name
 and with the safe area.
 
+**Time pickers.** iOS gets the wheel and everything else the Material dial, macOS included. A wheel
+is a touch control and is poor with a pointer, so here the desktop outranks the Apple idiom. The
+date pickers are not affected.
+
 **Keyboard.** §10.5's "Cmd/Ctrl" is one shortcut with two names, not two shortcuts: the command key
 is Cmd on Apple and Ctrl elsewhere, never both. On macOS the same callbacks are also a real menu bar
 (app, Track, View), so a menu can never drift from its shortcut.

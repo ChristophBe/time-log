@@ -5,7 +5,8 @@ import 'design.dart';
 
 /// Which design system's manners the app is using.
 enum PlatformIdiom {
-  /// iOS and macOS: continuous corners, grouped lists, wheel pickers.
+  /// iOS and macOS: continuous corners, grouped lists, wheel pickers (bar the
+  /// time on macOS, SPEC §9.8).
   apple,
 
   /// Android, and the fallback for anything unrecognised.
