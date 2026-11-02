@@ -3,7 +3,8 @@ import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/timeline/invariants.dart';
 import 'package:time_log/src/domain/timeline/time_conflicts.dart';
 
-/// SPEC §7.2: typed input is reported, never silently moved.
+/// SPEC §7.1, §7.2: typed input is reported, never silently moved, and says what
+/// happens to the entries beside it.
 void main() {
   DateTime at(int hour, [int minute = 0]) =>
       DateTime.utc(2026, 3, 10, hour, minute);
@@ -86,19 +87,26 @@ void main() {
     );
   });
 
-  test('typedOverlapIsRejectedWithNamedConflict for the previous entry', () {
-    final conflict = findTimeConflict(
-      original: target,
-      startUtc: at(9, 30),
-      endUtc: at(11),
-      previous: entry('p', at(8), at(10)),
-      now: now,
-    );
-    expect(conflict, isA<OverlapsPrevious>());
+  test('an overlap is not a conflict: it trims the neighbour', () {
     expect(
-      (conflict! as OverlapsPrevious).untilUtc,
-      at(10),
-      reason: 'the message can name when the neighbour actually ends',
+      findTimeConflict(
+        original: target,
+        startUtc: at(9, 30),
+        endUtc: at(11),
+        previous: entry('p', at(8), at(10)),
+        now: now,
+      ),
+      isNull,
+    );
+    expect(
+      findTimeConflict(
+        original: target,
+        startUtc: at(9),
+        endUtc: at(11, 30),
+        next: entry('n', at(11), at(12)),
+        now: now,
+      ),
+      isNull,
     );
   });
 
@@ -115,41 +123,147 @@ void main() {
     );
   });
 
-  test('overlapping the next entry is rejected', () {
-    final conflict = findTimeConflict(
-      original: target,
-      startUtc: at(9),
-      endUtc: at(11, 30),
-      next: entry('n', at(11), at(12)),
-      now: now,
-    );
-    expect(conflict, isA<OverlapsNext>());
-    expect((conflict! as OverlapsNext).fromUtc, at(11));
+  group('typedTrimBelowTheMinimumIsRejectedWithNamedConflict', () {
+    test('for the previous entry, shared or not', () {
+      expect(
+        findTimeConflict(
+          original: target,
+          startUtc: at(8).add(const Duration(seconds: 30)),
+          endUtc: at(15),
+          previous: entry('p', at(8), at(10)),
+          now: now,
+        ),
+        isA<PreviousWouldBeTooShort>(),
+      );
+    });
+
+    test('for the next entry, shared or not', () {
+      expect(
+        findTimeConflict(
+          original: target,
+          startUtc: at(14),
+          endUtc: at(16, 30),
+          next: entry('n', at(16), at(16, 30)),
+          now: now,
+        ),
+        isA<NextWouldBeTooShort>(),
+      );
+    });
+
+    test('a move past the neighbour entirely is the same refusal', () {
+      expect(
+        findTimeConflict(
+          original: target,
+          startUtc: at(7),
+          endUtc: at(15),
+          previous: entry('p', at(8), at(10)),
+          now: now,
+        ),
+        isA<PreviousWouldBeTooShort>(),
+      );
+    });
+
+    test('a running next entry has no far edge to protect', () {
+      expect(
+        findTimeConflict(
+          original: target,
+          startUtc: at(14),
+          endUtc: at(16, 30),
+          next: entry('n', at(16), null),
+          now: now,
+        ),
+        isNull,
+      );
+    });
   });
 
-  test('a running entry measured to now may not reach the next entry', () {
-    expect(
-      findTimeConflict(
-        original: target,
-        startUtc: at(9),
-        next: entry('n', at(12), at(13)),
-        now: now,
-      ),
-      isA<OverlapsNext>(),
-      reason: 'a running entry reaches now, which is past 12:00',
-    );
-  });
+  group('resolveTimesEdit (SPEC §7.1)', () {
+    final previous = entry('p', at(13), at(14));
+    final next = entry('n', at(15), at(16));
 
-  test('a running previous entry blocks anything after its start', () {
-    expect(
-      findTimeConflict(
+    test('moving away from a touching neighbour reports it, unchanged', () {
+      final edit = resolveTimesEdit(
         original: target,
-        startUtc: at(10),
-        endUtc: at(11),
-        previous: entry('p', at(9), null),
-        now: now,
-      ),
-      isA<OverlapsPrevious>(),
-    );
+        startUtc: at(14, 15),
+        endUtc: at(14, 45),
+        previous: previous,
+        next: next,
+      );
+
+      expect(edit.previous, isNull);
+      expect(edit.next, isNull);
+      expect(edit.detachedPrevious, previous);
+      expect(edit.detachedNext, next);
+    });
+
+    test('a carried neighbour moves and is no longer detached', () {
+      final edit = resolveTimesEdit(
+        original: target,
+        startUtc: at(14, 15),
+        endUtc: at(14, 45),
+        previous: previous,
+        next: next,
+        carryPrevious: true,
+        carryNext: true,
+      );
+
+      expect(edit.previous!.endUtc, at(14, 15));
+      expect(edit.next!.startUtc, at(14, 45));
+      expect(edit.detachedPrevious, isNull);
+      expect(edit.detachedNext, isNull);
+    });
+
+    test('anOverlapTrimsTheNeighbourWithoutAsking', () {
+      final edit = resolveTimesEdit(
+        original: target,
+        startUtc: at(13, 30),
+        endUtc: at(15, 30),
+        previous: previous,
+        next: next,
+      );
+
+      expect(edit.previous!.endUtc, at(13, 30));
+      expect(edit.next!.startUtc, at(15, 30));
+      expect(edit.detachedPrevious, isNull);
+      expect(edit.detachedNext, isNull);
+    });
+
+    test('an overlap across a gap trims too', () {
+      final edit = resolveTimesEdit(
+        original: target,
+        startUtc: at(12, 30),
+        endUtc: at(15),
+        previous: entry('p', at(12), at(13)),
+      );
+
+      expect(edit.previous!.endUtc, at(12, 30));
+    });
+
+    test('a free edge inside its gap changes nothing and asks nothing', () {
+      final edit = resolveTimesEdit(
+        original: target,
+        startUtc: at(13, 30),
+        endUtc: at(15, 30),
+        previous: entry('p', at(12), at(13)),
+        next: entry('n', at(16), at(17)),
+      );
+
+      expect(edit.previous, isNull);
+      expect(edit.next, isNull);
+      expect(edit.detachedPrevious, isNull);
+      expect(edit.detachedNext, isNull);
+    });
+
+    test('an edge that did not move leaves its neighbour alone', () {
+      final edit = resolveTimesEdit(
+        original: target,
+        startUtc: at(14),
+        endUtc: at(14, 30),
+        previous: previous,
+      );
+
+      expect(edit.previous, isNull);
+      expect(edit.detachedPrevious, isNull);
+    });
   });
 }

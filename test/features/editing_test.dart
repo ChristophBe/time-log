@@ -40,13 +40,31 @@ void main() {
     registerFallbackValue(Duration.zero);
   });
 
-  void stubMoves(MockTimelineWriter writer) {
+  void stubMoves(MockTimelineWriter writer, {TimeEntry? detached}) {
+    when(
+      () => writer.previewBoundaryMove(
+        entryId: any(named: 'entryId'),
+        edge: any(named: 'edge'),
+        desired: any(named: 'desired'),
+        snap: any(named: 'snap'),
+      ),
+    ).thenAnswer((invocation) async {
+      final desired =
+          invocation.namedArguments[const Symbol('desired')] as DateTime;
+      return BoundaryMove(
+        target: entry,
+        detachedNeighbour: detached,
+        requested: desired,
+        applied: desired,
+      );
+    });
     when(
       () => writer.moveBoundary(
         entryId: any(named: 'entryId'),
         edge: any(named: 'edge'),
         desired: any(named: 'desired'),
         snap: any(named: 'snap'),
+        carryNeighbour: any(named: 'carryNeighbour'),
       ),
     ).thenAnswer(
       (invocation) async => MoveOutcome(
@@ -91,6 +109,83 @@ void main() {
           snap: const AppSettings().snap,
         ),
       ).called(1);
+    });
+
+    group('a nudge away from a touching neighbour (SPEC §7.1)', () {
+      final neighbour = entryFor(
+        id: 'n',
+        activityId: email.id,
+        start: DateTime.utc(2026, 3, 10, 14),
+        end: DateTime.utc(2026, 3, 10, 14, 30),
+      );
+
+      Future<WidgetHarness> nudgeEndEarlier(WidgetTester tester) async {
+        final h = calendarHarness();
+        stubMoves(h.writer, detached: neighbour);
+        await h.pump(tester, const TodayScreen());
+
+        final block = find.byKey(const ValueKey<String>('block-e1'));
+        await tester.ensureVisible(block);
+        await tester.pumpAndSettle();
+        Focus.of(tester.element(block)).requestFocus();
+        await tester.pumpAndSettle();
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+        await tester.pumpAndSettle();
+        return h;
+      }
+
+      testWidgets('asks, and Adjust carries the neighbour', (tester) async {
+        final h = await nudgeEndEarlier(tester);
+
+        expect(find.text('Also adjust Email?'), findsOneWidget);
+        await tester.tap(find.text('Adjust Email'));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => h.writer.moveBoundary(
+            entryId: 'e1',
+            edge: BoundaryEdge.end,
+            desired: DateTime.utc(2026, 3, 10, 13, 55),
+            snap: const AppSettings().snap,
+            carryNeighbour: true,
+          ),
+        ).called(1);
+      });
+
+      testWidgets('Leave gap commits without the neighbour', (tester) async {
+        final h = await nudgeEndEarlier(tester);
+
+        await tester.tap(find.text('Leave gap'));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => h.writer.moveBoundary(
+            entryId: 'e1',
+            edge: BoundaryEdge.end,
+            desired: DateTime.utc(2026, 3, 10, 13, 55),
+            snap: const AppSettings().snap,
+          ),
+        ).called(1);
+      });
+
+      testWidgets('Cancel commits nothing', (tester) async {
+        final h = await nudgeEndEarlier(tester);
+
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        verifyNever(
+          () => h.writer.moveBoundary(
+            entryId: any(named: 'entryId'),
+            edge: any(named: 'edge'),
+            desired: any(named: 'desired'),
+            snap: any(named: 'snap'),
+            carryNeighbour: any(named: 'carryNeighbour'),
+          ),
+        );
+      });
     });
 
     testWidgets('Alt+Up moves the start one snap earlier', (tester) async {
@@ -295,6 +390,8 @@ void main() {
           entryId: any(named: 'entryId'),
           startUtc: any(named: 'startUtc'),
           endUtc: any(named: 'endUtc'),
+          carryPrevious: any(named: 'carryPrevious'),
+          carryNext: any(named: 'carryNext'),
         ),
       ).thenAnswer((_) async => UndoToken('x', () async {}));
       when(() => h.writer.delete(any()))
@@ -470,32 +567,29 @@ void main() {
       ).called(1);
     });
 
-    testWidgets('an overlap across a gap is named inline and blocks Save', (
+    testWidgets('a trim below the minimum is named inline and blocks Save', (
       tester,
     ) async {
       await pumpSheet(
         tester,
         neighbours: (
-          // Ends at 13:30, with a gap before our 14:00 start -- so moving the
-          // start back to 13:25 is a genuine overlap, not a shared boundary.
+          // Only 12:55-13:00, touching our 13:00 start, so one step back would
+          // swallow it whole.
           previous: entryFor(
             id: 'p',
             activityId: email.id,
-            start: DateTime.utc(2026, 3, 10, 12),
-            end: DateTime.utc(2026, 3, 10, 12, 30),
+            start: DateTime.utc(2026, 3, 10, 12, 55),
+            end: DateTime.utc(2026, 3, 10, 13),
           ),
           next: null,
         ),
       );
 
-      // Walk the start back past 12:30.
-      for (var i = 0; i < 7; i++) {
-        await tester.tap(find.byTooltip('Start 5 minutes earlier'));
-        await tester.pumpAndSettle();
-      }
+      await tester.tap(find.byTooltip('Start 5 minutes earlier'));
+      await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('entry-sheet-conflict')), findsOneWidget);
-      expect(find.textContaining('Overlaps Email until'), findsOneWidget);
+      expect(find.textContaining('would leave Email under'), findsOneWidget);
       expect(
         tester
             .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
@@ -503,6 +597,188 @@ void main() {
         isNull,
         reason: 'SPEC §7.2: a typed conflict is reported, not silently clamped',
       );
+    });
+
+    group('neighbours (SPEC §7.1)', () {
+      final before = entryFor(
+        id: 'p',
+        activityId: email.id,
+        start: DateTime.utc(2026, 3, 10, 12),
+        end: DateTime.utc(2026, 3, 10, 13),
+      );
+      final after = entryFor(
+        id: 'n',
+        activityId: email.id,
+        start: DateTime.utc(2026, 3, 10, 14),
+        end: DateTime.utc(2026, 3, 10, 14, 30),
+      );
+
+      Future<void> tapSave(WidgetTester tester) async {
+        await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('moving a touching end away asks; Adjust carries it', (
+        tester,
+      ) async {
+        final h = await pumpSheet(
+          tester,
+          neighbours: (previous: null, next: after),
+        );
+
+        await tester.tap(find.byTooltip('End 5 minutes earlier'));
+        await tester.pumpAndSettle();
+        await tapSave(tester);
+
+        expect(find.text('Also adjust Email?'), findsOneWidget);
+        verifyNever(
+          () => h.writer.setEntryTimes(
+            entryId: any(named: 'entryId'),
+            startUtc: any(named: 'startUtc'),
+            endUtc: any(named: 'endUtc'),
+            carryPrevious: any(named: 'carryPrevious'),
+            carryNext: any(named: 'carryNext'),
+          ),
+        );
+
+        await tester.tap(find.text('Adjust Email'));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => h.writer.setEntryTimes(
+            entryId: 'e1',
+            startUtc: DateTime.utc(2026, 3, 10, 13),
+            endUtc: DateTime.utc(2026, 3, 10, 13, 55),
+            carryNext: true,
+          ),
+        ).called(1);
+      });
+
+      testWidgets('Leave gap saves only this entry', (tester) async {
+        final h = await pumpSheet(
+          tester,
+          neighbours: (previous: null, next: after),
+        );
+
+        await tester.tap(find.byTooltip('End 5 minutes earlier'));
+        await tester.pumpAndSettle();
+        await tapSave(tester);
+        await tester.tap(find.text('Leave gap'));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => h.writer.setEntryTimes(
+            entryId: 'e1',
+            startUtc: DateTime.utc(2026, 3, 10, 13),
+            endUtc: DateTime.utc(2026, 3, 10, 13, 55),
+          ),
+        ).called(1);
+      });
+
+      testWidgets('Cancel saves nothing and keeps the sheet open', (
+        tester,
+      ) async {
+        final h = await pumpSheet(
+          tester,
+          neighbours: (previous: null, next: after),
+        );
+
+        await tester.tap(find.byTooltip('End 5 minutes earlier'));
+        await tester.pumpAndSettle();
+        await tapSave(tester);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        verifyNever(
+          () => h.writer.setEntryTimes(
+            entryId: any(named: 'entryId'),
+            startUtc: any(named: 'startUtc'),
+            endUtc: any(named: 'endUtc'),
+            carryPrevious: any(named: 'carryPrevious'),
+            carryNext: any(named: 'carryNext'),
+          ),
+        );
+        expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
+      });
+
+      testWidgets('an overlap saves without asking', (tester) async {
+        final h = await pumpSheet(
+          tester,
+          neighbours: (previous: null, next: after),
+        );
+
+        await tester.tap(find.byTooltip('End 5 minutes later'));
+        await tester.pumpAndSettle();
+        await tapSave(tester);
+
+        expect(find.text('Also adjust Email?'), findsNothing);
+        verify(
+          () => h.writer.setEntryTimes(
+            entryId: 'e1',
+            startUtc: DateTime.utc(2026, 3, 10, 13),
+            endUtc: DateTime.utc(2026, 3, 10, 14, 5),
+          ),
+        ).called(1);
+      });
+
+      testWidgets('detaching both asks twice, then writes once', (
+        tester,
+      ) async {
+        final h = await pumpSheet(
+          tester,
+          neighbours: (previous: before, next: after),
+        );
+
+        await tester.tap(find.byTooltip('Start 5 minutes later'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('End 5 minutes earlier'));
+        await tester.pumpAndSettle();
+        await tapSave(tester);
+
+        await tester.tap(find.text('Adjust Email'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Leave gap'));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => h.writer.setEntryTimes(
+            entryId: 'e1',
+            startUtc: DateTime.utc(2026, 3, 10, 13, 5),
+            endUtc: DateTime.utc(2026, 3, 10, 13, 55),
+            carryPrevious: true,
+          ),
+        ).called(1);
+      });
+
+      testWidgets('cancelling the second question writes nothing', (
+        tester,
+      ) async {
+        final h = await pumpSheet(
+          tester,
+          neighbours: (previous: before, next: after),
+        );
+
+        await tester.tap(find.byTooltip('Start 5 minutes later'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('End 5 minutes earlier'));
+        await tester.pumpAndSettle();
+        await tapSave(tester);
+
+        await tester.tap(find.text('Adjust Email'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        verifyNever(
+          () => h.writer.setEntryTimes(
+            entryId: any(named: 'entryId'),
+            startUtc: any(named: 'startUtc'),
+            endUtc: any(named: 'endUtc'),
+            carryPrevious: any(named: 'carryPrevious'),
+            carryNext: any(named: 'carryNext'),
+          ),
+        );
+      });
     });
 
     testWidgets('Delete removes the entry and offers Undo', (tester) async {

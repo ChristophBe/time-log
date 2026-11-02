@@ -398,28 +398,38 @@ identically to drag, typed fields and steppers.
 
 ### 7.1 Shared vs free boundaries
 
-- **Shared boundary** (two entries touch, `A.endAt == B.startAt`): moving it moves **both** edges.
-  A grows while B shrinks, or vice versa. Total tracked time is conserved, no gap appears. This is
-  the behaviour of adjacent events in Google Calendar and of Toggl's timeline, and it is what "I
-  switched at 14:30, not 14:15" means.
-- **Free boundary** (a gap, or nothing, on the other side): moving it moves **that edge only**,
-  growing into or shrinking away from the gap.
-- This distinction belongs to the **boundary, not to the gesture**. A typed time and a stepper nudge
-  carry the neighbour exactly as a drag does. Without that, typing could never move a shared
-  boundary at all — every value would be reported as overlapping the neighbour — and the three
-  editing paths of §14.5 would disagree.
+A neighbour is another entry's time, so it changes only when it has to or when you say so:
+
+| The edit | What happens to the neighbour |
+| --- | --- |
+| **Overlaps it**, whether the boundary was shared or free | Trimmed automatically, without asking, as far as §7.2 allows. Invariant 2 leaves no other outcome, and typing over it says what you meant. |
+| **Moves a shared boundary away from it** (two entries touch, `A.endAt == B.startAt`, and the edit would open a gap) | You are asked: **Adjust *Email*** moves its edge along, so the entries still touch and total tracked time is conserved; **Leave gap** changes only this entry; **Cancel** changes nothing. |
+| **Stays inside a gap** on a free boundary (a gap, or nothing, on the other side) | Nothing, and no question: that edge moves alone, and there is no attached neighbour to ask about. |
+
+- "I switched at 14:30, not 14:15" and "I stopped at 14:30 and did nothing until 15:00" are the same
+  edit to one entry and mean different things to the next one. Only you know which you meant, which
+  is why a move away is asked and not assumed. It is the same reason §4.7 forbids stretching
+  neighbours over a gap.
+- This belongs to the **boundary, not to the gesture**. Drag, typed times, keyboard and screen-reader
+  nudges all follow the table, and all ask, so the editing paths of §14.5 cannot disagree.
+- The question comes **once per commit**: at the end of a drag, on **Save**, or per nudge. It never
+  interrupts a drag, whose preview shows the neighbour as it would be if left alone. A sheet edit
+  that detaches both neighbours asks about each in turn and writes nothing until all are answered;
+  **Cancel** keeps the sheet open with the edit intact.
 
 ### 7.2 Clamping
 
 A boundary can never cross:
 - the far edge of its own entry, minus the 1-minute minimum;
-- the far edge of the neighbour it shares with, minus that neighbour's 1-minute minimum;
+- the far edge of the neighbour on that side, shared or not, minus that neighbour's 1-minute minimum;
 - `now`, for anything that would end in the future.
+
+An edit can trim a neighbour but never swallow it: deleting an entry is a decision of its own (§6.8).
 
 Clamping is silent: the block simply stops following the finger, with a short haptic at the limit.
 The app does not throw an error for a gesture that was merely over-eager. **Typed** input that
-violates a clamp *is* reported, inline, naming the conflict ("overlaps *Email* until 15:05", or for a
-shared boundary, "that would leave *Email* under 1 minute").
+violates a clamp *is* reported, inline, naming the conflict ("that would leave *Email* under 1
+minute").
 
 A drag keeps the **grab offset**: the boundary moves by as much as the finger moves, rather than
 jumping to wherever the finger first landed. Grabbing an edge should not itself change anything.
@@ -434,15 +444,16 @@ Snapping applies to the resulting instant, not to the delta, so a block edited t
 Its end is "now" and is not editable; the bottom of the running block has no drag handle. Its start
 is editable like any other free or shared boundary.
 
-The entry *before* it is editable in full, including the boundary the two share, which moves both
-edges exactly as §7.1 says any shared boundary does. Only the running entry's own end is special,
-and only because "now" is not a value anyone gets to choose — the entry that just finished is the
-one most likely to need correcting, and §14.5 applies to it like everything else.
+The entry *before* it is editable in full, including the boundary the two share, which follows §7.1
+like any other: growing into the running entry trims its start, and moving away asks. Only the
+running entry's own end is special, and only because "now" is not a value anyone gets to choose —
+the entry that just finished is the one most likely to need correcting, and §14.5 applies to it like
+everything else.
 
 ### 7.5 Undo
 
-Every committed boundary change pushes one undo step covering **all** edges it moved (a shared-
-boundary drag is one step, not two). SnackBar with "Undo", 8 seconds, and the action remains in the
+Every committed boundary change pushes one undo step covering **all** edges it moved (a trimmed or
+adjusted neighbour is part of the same step, not a second one). SnackBar with "Undo", 8 seconds, and the action remains in the
 sheet's overflow menu for the rest of the session.
 
 ---
@@ -601,7 +612,8 @@ Opened by tapping any block or history row. Contents, in order:
    rows, because they are three views of the same two instants: editing any two updates the
    third (editing duration moves `endAt`, or `startAt` for a boundary pinned by §7). Each has a
    time-picker affordance **and** `−`/`+` stepper buttons of one snap interval.
-3. Conflict text inline when a typed value breaks a clamp (§7.2).
+3. Conflict text inline when a typed value breaks a clamp (§7.2). **Save** asks about any neighbour
+   the edit would detach (§7.1).
 4. Actions, weighted: **Resume** (or **Continue**, §6.4) and **Split here…** as secondary buttons,
    **Delete** demoted and in the error colour, and **Save** as the one filled button, full width at
    the thumb end of the sheet.
@@ -1070,7 +1082,9 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 **Unit — boundary math (§7).** `draggingSharedBoundaryConservesTotalTrackedTime` ·
 `draggingFreeEdgeGrowsIntoGapOnly` · `clampStopsAtNeighbourMinusMinimum` ·
 `snapRoundsInstantNotDelta` · `repeatedEditsDoNotDrift` · `runningEntryEndIsNotEditable` ·
-`theBoundaryBeforeTheRunningEntryIsEditable` · `typedOverlapIsRejectedWithNamedConflict`.
+`theBoundaryBeforeTheRunningEntryIsEditable` · `anOverlapTrimsTheNeighbourWithoutAsking` ·
+`movingASharedBoundaryAwayAsksBeforeMovingTheNeighbour` ·
+`typedTrimBelowTheMinimumIsRejectedWithNamedConflict`.
 
 **Unit — day/zone logic (§5.3).** `entryCrossingMidnightRendersInBothDays` ·
 `dayTotalsClipToDayWindow` · `dstShortDayHas23HourAxis` · `dstLongDayHas25HourAxis` ·
@@ -1160,8 +1174,9 @@ surface, and the spec updated if the phase taught us something.
    background service.
 5. Any entry's start or end can be corrected by **drag**, by **typing**, and by **keyboard only**,
    with identical results and a working undo.
-6. Dragging a shared boundary conserves total tracked time; dragging a free edge changes only that
-   entry's length.
+6. Moving a boundary into a neighbour trims it without asking. Moving a shared boundary away asks:
+   **Adjust** conserves total tracked time, **Leave gap** changes only that entry's length. A free
+   edge that stays inside its gap changes only that entry's length.
 7. Any past entry can be resumed in one action, and extending the most recent one is offered instead
    of a duplicate when it ended within the continue window.
 8. The day calendar renders a 23-hour and a 25-hour DST day, and a midnight-crossing entry, correctly.

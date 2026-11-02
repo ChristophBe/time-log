@@ -24,6 +24,7 @@ import '../today/today_providers.dart';
 import 'activity_picker.dart';
 import 'conflict_text.dart';
 import 'entry_providers.dart';
+import 'neighbour_prompt.dart';
 
 /// Details and times of one entry (SPEC §8.4).
 ///
@@ -153,11 +154,48 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
 
   Future<void> _save(TimeConflict? conflict) async {
     if (conflict != null) return;
+    final neighbours = ref.read(entryNeighboursProvider(widget.entry.id)).value;
+    final edit = resolveTimesEdit(
+      original: widget.entry,
+      startUtc: _start,
+      endUtc: _end,
+      previous: neighbours?.previous,
+      next: neighbours?.next,
+    );
+
+    // Every answer comes before any write, so cancelling the second question
+    // cannot leave the first half of the edit behind (SPEC §7.1).
+    final activities = ref.read(activitiesByIdProvider).value;
+    var carryPrevious = false;
+    final detachedPrevious = edit.detachedPrevious;
+    if (detachedPrevious != null) {
+      final answer = await askAdjustNeighbour(
+        context,
+        neighbourName: activities?[detachedPrevious.activityId]?.name,
+        gap: _start.difference(widget.entry.startUtc),
+      );
+      if (answer == null || !mounted) return;
+      carryPrevious = answer;
+    }
+    var carryNext = false;
+    final detachedNext = edit.detachedNext;
+    if (detachedNext != null) {
+      final answer = await askAdjustNeighbour(
+        context,
+        neighbourName: activities?[detachedNext.activityId]?.name,
+        gap: widget.entry.endUtc!.difference(_end!),
+      );
+      if (answer == null || !mounted) return;
+      carryNext = answer;
+    }
+
     final writer = ref.read(timelineWriterProvider);
     final undo = await writer.setEntryTimes(
       entryId: widget.entry.id,
       startUtc: _start,
       endUtc: _end,
+      carryPrevious: carryPrevious,
+      carryNext: carryNext,
     );
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -417,7 +455,6 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
                   child: _ConflictNotice(
                     message: describeConflict(
                       conflict,
-                      use24h: use24h,
                       previousName: neighbours?.previous == null
                           ? null
                           : activities[neighbours!.previous!.activityId]?.name,
