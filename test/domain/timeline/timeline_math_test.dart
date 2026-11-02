@@ -70,6 +70,7 @@ void main() {
         prev: a,
         snap: const Duration(minutes: 5),
         now: now,
+        carryNeighbour: true,
       );
 
       expect(move.neighbour, isNotNull, reason: 'the neighbour moved too');
@@ -95,10 +96,73 @@ void main() {
         next: b,
         snap: const Duration(minutes: 5),
         now: now,
+        carryNeighbour: true,
       );
 
       expect(move.target.endUtc, at(9, 30));
       expect(move.neighbour!.startUtc, at(9, 30));
+      expect(move.detachedNeighbour, isNull);
+    });
+
+    test('movingASharedBoundaryAwayAsksBeforeMovingTheNeighbour', () {
+      final a = entry('a', 9, 10);
+      final b = entry('b', 10, 11);
+
+      final startMove = resolveBoundaryMove(
+        target: b,
+        edge: BoundaryEdge.start,
+        desired: at(10, 30),
+        prev: a,
+        snap: const Duration(minutes: 5),
+        now: now,
+      );
+      expect(startMove.neighbour, isNull);
+      expect(startMove.detachedNeighbour, a);
+
+      final endMove = resolveBoundaryMove(
+        target: a,
+        edge: BoundaryEdge.end,
+        desired: at(9, 30),
+        next: b,
+        snap: const Duration(minutes: 5),
+        now: now,
+      );
+      expect(endMove.neighbour, isNull);
+      expect(endMove.detachedNeighbour, b);
+    });
+
+    test('anOverlapTrimsTheNeighbourWithoutAsking', () {
+      final a = entry('a', 9, 10);
+      final b = entry('b', 10, 11);
+
+      final move = resolveBoundaryMove(
+        target: b,
+        edge: BoundaryEdge.start,
+        desired: at(9, 30),
+        prev: a,
+        snap: const Duration(minutes: 5),
+        now: now,
+      );
+
+      expect(move.neighbour!.endUtc, at(9, 30));
+      expect(move.detachedNeighbour, isNull);
+    });
+
+    test('a move that goes nowhere does not ask', () {
+      final a = entry('a', 9, 10);
+      final b = entry('b', 10, 11);
+
+      final move = resolveBoundaryMove(
+        target: b,
+        edge: BoundaryEdge.start,
+        desired: at(10),
+        prev: a,
+        snap: const Duration(minutes: 5),
+        now: now,
+      );
+
+      expect(move.neighbour, isNull);
+      expect(move.detachedNeighbour, isNull);
     });
 
     test('clampStopsAtNeighbourMinusMinimum', () {
@@ -160,7 +224,7 @@ void main() {
       expect(move.wasClamped, isFalse);
     });
 
-    test('a free edge stops at the neighbour rather than overlapping it', () {
+    test('a free edge that overlaps the neighbour trims it', () {
       final a = entry('a', 9, 10);
       final b = entry('b', 11, 12);
 
@@ -173,12 +237,53 @@ void main() {
         now: now,
       );
 
-      expect(move.wasClamped, isTrue);
+      expect(move.wasClamped, isFalse);
+      expect(move.applied, at(9, 30));
+      expect(move.neighbour!.endUtc, at(9, 30));
+      expect(move.detachedNeighbour, isNull);
+    });
+
+    test('a free end that overlaps the neighbour trims it', () {
+      final a = entry('a', 9, 10);
+      final b = entry('b', 11, 12);
+
+      final move = resolveBoundaryMove(
+        target: a,
+        edge: BoundaryEdge.end,
+        desired: at(11, 30),
+        next: b,
+        snap: const Duration(minutes: 5),
+        now: now,
+      );
+
+      expect(move.applied, at(11, 30));
+      expect(move.neighbour!.startUtc, at(11, 30));
+      expect(move.detachedNeighbour, isNull);
+    });
+
+    test('a neighbour already under the minimum is not trimmed further', () {
+      final short = entry(
+        'a',
+        10,
+        10,
+      ).copyWith(endUtc: at(10).add(const Duration(seconds: 20)));
+      final b = entry('b', 11, 12);
+
+      final move = resolveBoundaryMove(
+        target: b,
+        edge: BoundaryEdge.start,
+        desired: at(9),
+        prev: short,
+        snap: Duration.zero,
+        now: now,
+      );
+
       expect(
         move.applied,
-        at(10),
-        reason: 'it meets a exactly, never overlaps',
+        short.endUtc,
+        reason: 'SPEC §4.3: it stays as it was',
       );
+      expect(move.neighbour, isNull);
     });
 
     test('a free end never lands in the future', () {
@@ -251,6 +356,7 @@ void main() {
       prev: a,
       snap: const Duration(minutes: 5),
       now: now,
+      carryNeighbour: true,
     );
     expect(shared.changedEntries, hasLength(2));
 

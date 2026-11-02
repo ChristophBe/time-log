@@ -20,6 +20,7 @@ import '../../domain/timeline/invariants.dart';
 import '../../domain/timeline/timeline_math.dart';
 import '../../domain/timeline_writer.dart';
 import 'fill_gap_sheet.dart';
+import '../entry/neighbour_prompt.dart';
 import '../presence/active_rail.dart';
 import '../today/action_feedback.dart';
 import '../today/resume_action.dart';
@@ -203,11 +204,37 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
   }) async {
     final writer = ref.read(timelineWriterProvider);
     try {
+      final preview = await writer.previewBoundaryMove(
+        entryId: entryId,
+        edge: edge,
+        desired: desired,
+        snap: snap,
+      );
+      var carryNeighbour = false;
+      final detached = preview.detachedNeighbour;
+      if (detached != null) {
+        if (!mounted) return;
+        final original = edge == BoundaryEdge.start
+            ? detached.endUtc!
+            : detached.startUtc;
+        final answer = await askAdjustNeighbour(
+          context,
+          neighbourName: ref
+              .read(activitiesByIdProvider)
+              .value?[detached.activityId]
+              ?.name,
+          gap: preview.applied.difference(original).abs(),
+        );
+        if (answer == null) return;
+        carryNeighbour = answer;
+      }
+
       final outcome = await writer.moveBoundary(
         entryId: entryId,
         edge: edge,
         desired: desired,
         snap: snap,
+        carryNeighbour: carryNeighbour,
       );
       if (outcome.wasClamped) await HapticFeedback.selectionClick();
       if (!mounted) return;

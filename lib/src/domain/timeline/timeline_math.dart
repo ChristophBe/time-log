@@ -21,15 +21,16 @@ DateTime snapInstant(DateTime instant, Duration snap) {
 }
 
 /// The outcome of moving one boundary: the new times for the dragged entry and,
-/// when the boundary was shared with a neighbour, for that neighbour too.
+/// when the move changes a neighbour, for that neighbour too.
 ///
-/// Returning both in one value is what keeps "a shared boundary moves both
-/// edges" (SPEC §7.1) a single tested decision instead of a rule scattered
-/// across the UI.
+/// Returning both in one value is what keeps "when does a neighbour change"
+/// (SPEC §7.1) a single tested decision instead of a rule scattered across the
+/// UI.
 class BoundaryMove {
   const BoundaryMove({
     required this.target,
     this.neighbour,
+    this.detachedNeighbour,
     required this.requested,
     required this.applied,
   });
@@ -37,8 +38,13 @@ class BoundaryMove {
   /// The dragged entry with its new times.
   final TimeEntry target;
 
-  /// The adjacent entry with its new times, when the boundary was shared.
+  /// The adjacent entry with its new times, when the move overlapped it or was
+  /// asked to carry it.
   final TimeEntry? neighbour;
+
+  /// The adjacent entry, unchanged, when this move would open a gap beside it.
+  /// Whoever is committing the move has to ask about this one (SPEC §7.1).
+  final TimeEntry? detachedNeighbour;
 
   /// Where the boundary was asked to go (after snapping).
   final DateTime requested;
@@ -55,9 +61,11 @@ class BoundaryMove {
 
 /// Moves one boundary of [target], applying the whole of SPEC §7.
 ///
-/// - A boundary *shared* with [prev]/[next] (the entries touch) moves both
-///   edges, so total tracked time is conserved and no gap appears (§7.1).
-/// - A *free* boundary moves alone, growing into or shrinking away from a gap.
+/// - A move into [prev]/[next] trims that neighbour, shared or not (§7.1).
+/// - A move *away* from a neighbour it touched leaves that neighbour alone and
+///   reports it as [BoundaryMove.detachedNeighbour], unless [carryNeighbour]
+///   says the user chose to bring it along (§7.1).
+/// - A *free* boundary inside its gap moves alone.
 /// - The result is clamped so it can never cross a far edge or breach the
 ///   minimum length, and never lands in the future (§7.2).
 /// - The end of a running entry is not movable (§7.4).
@@ -70,6 +78,7 @@ BoundaryMove resolveBoundaryMove({
   required Duration snap,
   required DateTime now,
   Duration minLength = kMinEntryLength,
+  bool carryNeighbour = false,
 }) {
   if (edge == BoundaryEdge.end && target.isRunning) {
     throw const InvariantViolation(
@@ -86,17 +95,25 @@ BoundaryMove resolveBoundaryMove({
     var latest = targetEnd == null ? now : targetEnd.subtract(minLength);
     if (latest.isAfter(now)) latest = now;
 
-    final shared = prev != null && prev.endUtc == target.startUtc;
-    // Earliest: a shared neighbour must keep its own minimum; a free edge may
-    // grow back to the neighbour's end, or without one, to the start of time.
-    final earliest = shared
-        ? prev.startUtc.add(minLength)
-        : (prev?.endUtc ?? DateTime.utc(1970));
+    final prevEnd = prev?.endUtc;
+    // Earliest: a neighbour may be trimmed but must keep its own minimum. One
+    // already under it stays as recorded (SPEC §4.3), so the limit is its end.
+    var earliest = DateTime.utc(1970);
+    if (prev != null && prevEnd != null) {
+      final keepsMinimum = prev.startUtc.add(minLength);
+      earliest = keepsMinimum.isAfter(prevEnd) ? prevEnd : keepsMinimum;
+    }
 
     final applied = _clamp(requested, earliest, latest);
+    final overlaps = prevEnd != null && applied.isBefore(prevEnd);
+    final movedAway =
+        prevEnd == target.startUtc && applied.isAfter(target.startUtc);
     return BoundaryMove(
       target: target.copyWith(startUtc: applied),
-      neighbour: shared ? prev.copyWith(endUtc: applied) : null,
+      neighbour: overlaps || (movedAway && carryNeighbour)
+          ? prev?.copyWith(endUtc: applied)
+          : null,
+      detachedNeighbour: movedAway && !carryNeighbour ? prev : null,
       requested: requested,
       applied: applied,
     );
@@ -104,16 +121,28 @@ BoundaryMove resolveBoundaryMove({
 
   // edge == end, target is finished.
   final earliest = target.startUtc.add(minLength);
-  final shared = next != null && next.startUtc == target.endUtc;
-  var latest = shared
-      ? (next.endUtc?.subtract(minLength) ?? now)
-      : (next?.startUtc ?? now);
+  final nextEnd = next?.endUtc;
+  // The mirror image of the start's limit. A running neighbour has no far edge,
+  // so it can be trimmed right up to now.
+  var latest = now;
+  if (next != null && nextEnd != null) {
+    final keepsMinimum = nextEnd.subtract(minLength);
+    latest = keepsMinimum.isBefore(next.startUtc)
+        ? next.startUtc
+        : keepsMinimum;
+  }
   if (latest.isAfter(now)) latest = now;
 
   final applied = _clamp(requested, earliest, latest);
+  final overlaps = next != null && applied.isAfter(next.startUtc);
+  final movedAway =
+      next?.startUtc == target.endUtc && applied.isBefore(target.endUtc!);
   return BoundaryMove(
     target: target.copyWith(endUtc: applied),
-    neighbour: shared ? next.copyWith(startUtc: applied) : null,
+    neighbour: overlaps || (movedAway && carryNeighbour)
+        ? next?.copyWith(startUtc: applied)
+        : null,
+    detachedNeighbour: movedAway && !carryNeighbour ? next : null,
     requested: requested,
     applied: applied,
   );

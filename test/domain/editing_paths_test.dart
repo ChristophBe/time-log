@@ -59,6 +59,7 @@ void main() {
         edge: BoundaryEdge.start,
         desired: DateTime.utc(2026, 3, 10, 10, 31),
         snap: snap,
+        carryNeighbour: true,
       );
       results.add(shape(await setup.h.entries()));
       await setup.h.close();
@@ -75,26 +76,22 @@ void main() {
           edge: BoundaryEdge.start,
           desired: start,
           snap: snap,
+          carryNeighbour: true,
         );
       }
       results.add(shape(await setup.h.entries()));
       await setup.h.close();
     }
 
-    // Path 3: typing exact times. Typed input is not snapped, and the sheet
-    // writes the entry whose field was edited; moving the shared boundary means
-    // both sides land on the typed instant.
+    // Path 3: typing the exact time. Typed input is not snapped, and answering
+    // Adjust lands both sides on the typed instant.
     {
       final setup = await twoTouching();
-      await setup.h.writer.setEntryTimes(
-        entryId: setup.a.id,
-        startUtc: setup.a.startUtc,
-        endUtc: target,
-      );
       await setup.h.writer.setEntryTimes(
         entryId: setup.b.id,
         startUtc: target,
         endUtc: setup.b.endUtc,
+        carryPrevious: true,
       );
       results.add(shape(await setup.h.entries()));
       await setup.h.close();
@@ -119,6 +116,7 @@ void main() {
         edge: BoundaryEdge.start,
         desired: target,
         snap: snap,
+        carryNeighbour: true,
       );
 
       expect(await setup.h.totalTracked(), before, reason: 'SPEC §7.1');
@@ -158,6 +156,7 @@ void main() {
       // Far past the far end of B.
       desired: DateTime.utc(2026, 3, 10, 23),
       snap: snap,
+      carryNeighbour: true,
     );
 
     expect(outcome.wasClamped, isTrue);
@@ -178,6 +177,7 @@ void main() {
         edge: BoundaryEdge.start,
         desired: target,
         snap: snap,
+        carryNeighbour: true,
       );
       await outcome.undo.undo();
 
@@ -190,7 +190,83 @@ void main() {
     },
   );
 
-  test('typing a shared boundary carries the neighbour with it', () async {
+  test(
+    'typing a shared boundary away carries the neighbour on request',
+    () async {
+      final setup = await twoTouching();
+
+      await setup.h.writer.setEntryTimes(
+        entryId: setup.b.id,
+        startUtc: target,
+        endUtc: setup.b.endUtc,
+        carryPrevious: true,
+      );
+
+      final entries = await setup.h.entries();
+      expect(entries[0].endUtc, target);
+      expect(entries[1].startUtc, target);
+      await setup.h.close();
+    },
+  );
+
+  test('Leave gap moves only this entry, on every path', () async {
+    final results = <String>[];
+
+    {
+      final setup = await twoTouching();
+      final preview = await setup.h.writer.previewBoundaryMove(
+        entryId: setup.b.id,
+        edge: BoundaryEdge.start,
+        desired: target,
+        snap: snap,
+      );
+      expect(preview.detachedNeighbour?.id, setup.a.id);
+      await setup.h.writer.moveBoundary(
+        entryId: setup.b.id,
+        edge: BoundaryEdge.start,
+        desired: target,
+        snap: snap,
+      );
+      results.add(shape(await setup.h.entries()));
+      await setup.h.close();
+    }
+
+    {
+      final setup = await twoTouching();
+      await setup.h.writer.setEntryTimes(
+        entryId: setup.b.id,
+        startUtc: target,
+        endUtc: setup.b.endUtc,
+      );
+      final entries = await setup.h.entries();
+      expect(
+        entries[0].endUtc,
+        setup.a.endUtc,
+        reason: 'A was not asked to move',
+      );
+      results.add(shape(entries));
+      await setup.h.close();
+    }
+
+    expect(results.toSet(), hasLength(1), reason: 'SPEC §14.5');
+  });
+
+  test('previewing a move writes nothing', () async {
+    final setup = await twoTouching();
+    final before = shape(await setup.h.entries());
+
+    await setup.h.writer.previewBoundaryMove(
+      entryId: setup.b.id,
+      edge: BoundaryEdge.start,
+      desired: target,
+      snap: snap,
+    );
+
+    expect(shape(await setup.h.entries()), before);
+    await setup.h.close();
+  });
+
+  test('typing into a neighbour trims it without being asked to', () async {
     final setup = await twoTouching();
 
     await setup.h.writer.setEntryTimes(
@@ -209,36 +285,89 @@ void main() {
     await setup.h.close();
   });
 
-  test('a typed time that would overlap across a gap is refused', () async {
+  /// A 09:00-10:00, a gap, then B 11:00-12:00.
+  Future<({TimelineHarness h, String a, String b})> twoApart() async {
     final h = TimelineHarness(startAt: DateTime.utc(2026, 3, 10, 9));
     final first = await h.writer.startByName(name: 'A');
     h.clock.advance(const Duration(hours: 1));
     await h.writer.stop();
-    // A gap, so B's start is a free boundary, not a shared one.
     h.clock.advance(const Duration(hours: 1));
     final second = await h.writer.startByName(name: 'B');
     h.clock.advance(const Duration(hours: 1));
     await h.writer.stop();
-    final before = shape(await h.entries());
+    return (h: h, a: first.entryId, b: second.entryId);
+  }
 
-    await expectLater(
-      h.writer.setEntryTimes(
-        entryId: second.entryId,
-        // Reaches back into A, which is not adjacent and so is not carried.
-        startUtc: DateTime.utc(2026, 3, 10, 9, 30),
-        endUtc: (await h.byId(second.entryId)).endUtc,
-      ),
-      throwsA(isA<InvariantViolation>()),
-    );
+  test('an overlap across a gap trims the neighbour, on every path', () async {
+    final results = <String>[];
+    final reach = DateTime.utc(2026, 3, 10, 9, 30);
 
-    expect(
-      shape(await h.entries()),
-      before,
-      reason: 'SPEC §4.6: a refused edit changes nothing',
-    );
-    expect(first.entryId, isNotEmpty);
-    await h.close();
+    {
+      final setup = await twoApart();
+      await setup.h.writer.moveBoundary(
+        entryId: setup.b,
+        edge: BoundaryEdge.start,
+        desired: reach,
+        snap: snap,
+      );
+      results.add(shape(await setup.h.entries()));
+      await setup.h.close();
+    }
+
+    {
+      final setup = await twoApart();
+      await setup.h.writer.setEntryTimes(
+        entryId: setup.b,
+        startUtc: reach,
+        endUtc: (await setup.h.byId(setup.b)).endUtc,
+      );
+      expect((await setup.h.byId(setup.a)).endUtc, reach);
+      results.add(shape(await setup.h.entries()));
+      await setup.h.close();
+    }
+
+    expect(results.toSet(), hasLength(1), reason: 'SPEC §14.5');
   });
+
+  test('undo of an automatic trim restores both entries in one step', () async {
+    final setup = await twoApart();
+    final before = shape(await setup.h.entries());
+
+    final undo = await setup.h.writer.setEntryTimes(
+      entryId: setup.b,
+      startUtc: DateTime.utc(2026, 3, 10, 9, 30),
+      endUtc: (await setup.h.byId(setup.b)).endUtc,
+    );
+    await undo.undo();
+
+    expect(shape(await setup.h.entries()), before, reason: 'SPEC §7.5');
+    await setup.h.close();
+  });
+
+  test(
+    'a typed trim that would leave the neighbour too short is refused',
+    () async {
+      final setup = await twoApart();
+      final before = shape(await setup.h.entries());
+
+      await expectLater(
+        setup.h.writer.setEntryTimes(
+          entryId: setup.b,
+          // Thirty seconds of A would be left.
+          startUtc: DateTime.utc(2026, 3, 10, 9, 0, 30),
+          endUtc: (await setup.h.byId(setup.b)).endUtc,
+        ),
+        throwsA(isA<InvariantViolation>()),
+      );
+
+      expect(
+        shape(await setup.h.entries()),
+        before,
+        reason: 'SPEC §4.6: a refused edit changes nothing',
+      );
+      await setup.h.close();
+    },
+  );
 
   test(
     'moving the running start earlier is allowed; its end is not editable',
@@ -343,7 +472,7 @@ void main() {
       );
     });
 
-    test('the boundary it shares with the running entry moves both', () async {
+    test('growing into the running entry trims its start', () async {
       final r = await oneFinishedThenRunning();
       await r.h.writer.moveBoundary(
         entryId: r.a.id,
@@ -358,17 +487,42 @@ void main() {
         entries[1].startUtc,
         entries[0].endUtc,
         reason:
-            'SPEC §7.1: a shared boundary moves both edges, and the '
-            'running entry is no exception',
+            'SPEC §7.4: an overlap trims the neighbour, and the running '
+            'entry is no exception',
       );
       expect(entries[1].isRunning, isTrue);
       await r.h.close();
     });
 
-    test('a correction that really would overlap is still refused', () async {
-      // A gap this time, so the boundary is free rather than shared: there is
-      // no neighbour to carry, and growing A past B's start is a plain §4.2
-      // overlap. A 09:00-09:30, gap, B 10:00-running.
+    test('moving away from the running entry leaves it unless told', () async {
+      final r = await oneFinishedThenRunning();
+      final earlier = DateTime.utc(2026, 3, 10, 9, 45);
+
+      await r.h.writer.moveBoundary(
+        entryId: r.a.id,
+        edge: BoundaryEdge.end,
+        desired: earlier,
+        snap: snap,
+      );
+      expect((await r.h.byId(r.b.id)).startUtc, r.b.startUtc);
+
+      final other = await oneFinishedThenRunning();
+      await other.h.writer.moveBoundary(
+        entryId: other.a.id,
+        edge: BoundaryEdge.end,
+        desired: earlier,
+        snap: snap,
+        carryNeighbour: true,
+      );
+      expect((await other.h.byId(other.b.id)).startUtc, earlier);
+
+      await r.h.close();
+      await other.h.close();
+    });
+
+    test('typing across a gap trims the running start', () async {
+      // A gap this time, so the boundary is free rather than shared.
+      // A 09:00-09:30, gap, B 10:00-running.
       final h = TimelineHarness(startAt: DateTime.utc(2026, 3, 10, 9));
       await h.writer.startByName(name: 'A');
       h.clock.advance(const Duration(minutes: 30));
@@ -378,20 +532,14 @@ void main() {
       h.clock.advance(const Duration(hours: 2));
       final a = (await h.entries()).first;
 
-      await expectLater(
-        () => h.writer.setEntryTimes(
-          entryId: a.id,
-          startUtc: a.startUtc,
-          endUtc: DateTime.utc(2026, 3, 10, 10, 30),
-        ),
-        throwsA(isA<InvariantViolation>()),
-        reason: 'reading the running entry once, not twice, still sees §4.2',
+      await h.writer.setEntryTimes(
+        entryId: a.id,
+        startUtc: a.startUtc,
+        endUtc: DateTime.utc(2026, 3, 10, 10, 30),
       );
-      expect(
-        (await h.byId(a.id)).endUtc,
-        DateTime.utc(2026, 3, 10, 9, 30),
-        reason: 'SPEC §4.6: the refused write changed nothing',
-      );
+
+      final running = (await h.running())!;
+      expect(running.startUtc, DateTime.utc(2026, 3, 10, 10, 30));
       await h.close();
     });
   });

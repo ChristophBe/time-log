@@ -14,6 +14,7 @@ import 'timeline/continue_rule.dart';
 import 'timeline/day_rollover.dart';
 import 'timeline/day_window.dart';
 import 'timeline/invariants.dart';
+import 'timeline/time_conflicts.dart';
 import 'timeline/timeline_math.dart';
 
 part 'timeline_writer.g.dart';
@@ -422,13 +423,41 @@ class TimelineWriter {
 
   // ----------------------------------------------------------------- editing
 
+  /// What [moveBoundary] would do, without writing anything, so the UI can ask
+  /// about a detached neighbour before anything changes (SPEC §7.1).
+  Future<BoundaryMove> previewBoundaryMove({
+    required String entryId,
+    required BoundaryEdge edge,
+    required DateTime desired,
+    required Duration snap,
+  }) async {
+    final target = await _requireEntry(entryId);
+    final prevRow = await _db
+        .entryEndingAtOrBefore(entryId, toMillis(target.startUtc))
+        .getSingleOrNull();
+    final nextRow = await _db
+        .entryStartingAfter(entryId, toMillis(target.startUtc))
+        .getSingleOrNull();
+    return resolveBoundaryMove(
+      target: target,
+      edge: edge,
+      desired: desired,
+      prev: prevRow?.toDomain(),
+      next: nextRow?.toDomain(),
+      snap: snap,
+      now: _clock.nowUtc(),
+    );
+  }
+
   /// Moves one boundary, applying the whole of SPEC §7 via
-  /// [resolveBoundaryMove]. A boundary shared with a neighbour moves both edges.
+  /// [resolveBoundaryMove]. A neighbour it overlaps is trimmed; one it moves
+  /// away from only follows when [carryNeighbour] says the user chose that.
   Future<MoveOutcome> moveBoundary({
     required String entryId,
     required BoundaryEdge edge,
     required DateTime desired,
     required Duration snap,
+    bool carryNeighbour = false,
   }) async => _db.transaction(() async {
     final now = _clock.nowUtc();
     final targetRow = await _requireRow(entryId);
@@ -448,6 +477,7 @@ class TimelineWriter {
       next: nextRow?.toDomain(),
       snap: snap,
       now: now,
+      carryNeighbour: carryNeighbour,
     );
 
     final snapshots = <TimeEntryRow>[
@@ -469,14 +499,16 @@ class TimelineWriter {
   /// Sets both edges at once, for typed input in the entry sheet (SPEC §8.4).
   ///
   /// Typed values are not snapped (SPEC §7.3) and a conflict is reported rather
-  /// than silently clamped (SPEC §7.2). A boundary that was *shared* with a
-  /// neighbour still moves both edges, exactly as dragging it does (SPEC §7.1) --
-  /// otherwise typing could never move a shared boundary at all, since any value
-  /// would overlap the neighbour.
+  /// than silently clamped (SPEC §7.2). Neighbours follow the same rule as a
+  /// drag (SPEC §7.1): one the new times overlap is trimmed, and one they move
+  /// away from only follows when [carryPrevious] or [carryNext] says the user
+  /// chose that.
   Future<UndoToken> setEntryTimes({
     required String entryId,
     required DateTime startUtc,
     DateTime? endUtc,
+    bool carryPrevious = false,
+    bool carryNext = false,
   }) async => _db.transaction(() async {
     final now = _clock.nowUtc();
     final row = await _requireRow(entryId);
@@ -491,17 +523,38 @@ class TimelineWriter {
     final prev = prevRow?.toDomain();
     final next = nextRow?.toDomain();
 
-    final movesStart = startUtc != entry.startUtc;
-    final movesEnd = endUtc != entry.endUtc;
-    final sharedPrev =
-        movesStart && prev != null && prev.endUtc == entry.startUtc;
-    final sharedNext =
-        movesEnd && next != null && next.startUtc == entry.endUtc;
+    final conflict = findTimeConflict(
+      original: entry,
+      startUtc: startUtc,
+      endUtc: endUtc,
+      previous: prev,
+      next: next,
+      now: now,
+    );
+    if (conflict is PreviousWouldBeTooShort ||
+        conflict is NextWouldBeTooShort) {
+      throw const InvariantViolation(
+        'neighbourTooShort',
+        'That would leave a neighbouring entry too short.',
+      );
+    }
+
+    final edit = resolveTimesEdit(
+      original: entry,
+      startUtc: startUtc,
+      endUtc: endUtc,
+      previous: prev,
+      next: next,
+      carryPrevious: carryPrevious,
+      carryNext: carryNext,
+    );
+    final newPrev = edit.previous;
+    final newNext = edit.next;
 
     final snapshots = <TimeEntryRow>[
       row,
-      if (sharedPrev) prevRow!,
-      if (sharedNext) nextRow!,
+      if (newPrev != null) prevRow!,
+      if (newNext != null) nextRow!,
     ];
 
     await _writeTimes(
@@ -512,16 +565,12 @@ class TimelineWriter {
       ),
       now,
     );
-    if (sharedPrev) {
-      await _writeTimes(prev.copyWith(endUtc: startUtc), now);
-    }
-    if (sharedNext && endUtc != null) {
-      await _writeTimes(next.copyWith(startUtc: endUtc), now);
-    }
+    if (newPrev != null) await _writeTimes(newPrev, now);
+    if (newNext != null) await _writeTimes(newNext, now);
 
     await _validateAround(entryId, now);
-    if (sharedPrev) await _validateAround(prev.id, now);
-    if (sharedNext) await _validateAround(next.id, now);
+    if (newPrev != null) await _validateAround(newPrev.id, now);
+    if (newNext != null) await _validateAround(newNext.id, now);
 
     return _undoToken('Changed times', snapshots: snapshots);
   });
