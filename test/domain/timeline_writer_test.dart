@@ -365,6 +365,18 @@ void main() {
       expect(entries[1].note, 'n');
     });
 
+    test('splitReturnsTheSecondHalf', () async {
+      final entry = await h.writer.startByName(name: 'Long task', note: 'n');
+      h.clock.advance(const Duration(hours: 2));
+      await h.writer.stop();
+      final at = (await h.byId(entry.entryId)).startUtc
+          .add(const Duration(hours: 1));
+
+      final result = await h.writer.split(entryId: entry.entryId, atUtc: at);
+
+      expect(result.second, (await h.entries())[1], reason: 'SPEC §6.6');
+    });
+
     test('deleteLeavesGapAndDoesNotStretchNeighbours', () async {
       await h.writer.startByName(name: 'A');
       h.clock.advance(const Duration(minutes: 30));

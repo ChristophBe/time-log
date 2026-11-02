@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:time_log/src/app/router.dart';
+import 'package:time_log/src/domain/models/time_entry.dart';
+import 'package:time_log/src/features/entry/entry_sheet.dart';
 import 'package:time_log/src/features/shortcuts/shortcuts_sheet.dart';
 import 'package:time_log/src/features/history/history_screen.dart';
 import 'package:time_log/src/features/settings/settings_screen.dart';
@@ -24,6 +28,27 @@ void main() {
       routerConfig: buildRouter(),
     );
   }
+
+  testWidgets('the entry sheet opens above the shell, not inside it', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    final entry = TimeEntry(
+      id: 'e1',
+      activityId: 'a1',
+      startUtc: now.subtract(const Duration(hours: 1)),
+      endUtc: now,
+      tzName: 'UTC',
+    );
+    unawaited(showEntrySheet(tester.element(find.byType(TodayScreen)), entry));
+    await tester.pumpAndSettle();
+
+    // Inside the shell the SnackBar is painted over the sheet, where it covers
+    // Save and offers an Undo that can remove the entry on show (SPEC §6.6).
+    final sheet = tester.element(find.byType(EntrySheet));
+    expect(Navigator.of(sheet), Navigator.of(sheet, rootNavigator: true));
+  });
 
   testWidgets('a phone gets a bottom bar', (tester) async {
     await pumpApp(tester);

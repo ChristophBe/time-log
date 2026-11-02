@@ -299,8 +299,10 @@ boundary rules in §7. Available as drag, as typed time fields, and as ± steppe
 ### 6.6 Split
 
 Split one entry at a chosen instant into two entries with the same activity and note, sharing a
-boundary. Used to retro-label "I was actually doing two things there". The second half's activity
-can be changed immediately in the sheet that opens.
+boundary. Used to retro-label "I was actually doing two things there", so the entry sheet (§8.4)
+opens on the second half and its activity can be changed immediately. The split's Undo waits behind
+that sheet: it can be reached by closing the sheet within the undo window, and a relabel made there
+replaces it, because only the latest action offers Undo.
 
 ### 6.7 Rename, recolour, merge
 
@@ -587,11 +589,12 @@ Opened by tapping any block or history row. Contents, in order:
 
 1. Activity name behind the activity's coloured spine — the same one its block carries, so the
    sheet is visibly about *that* block — and the note (inline-editable, ≤ 2000 chars).
-   Tapping the name opens the **activity picker**: a name field over the §9.6 suggestions, which
-   relabels this entry (§6.10), with "Rename or recolour…" demoted to a footer row for the
-   all-history edit (§6.7). Like the note, the relabel commits on its own rather than through
-   **Save**, so it is its own undo step (§7.5); the sheet closes behind it, because its header is
-   about an activity that is no longer this entry's.
+   The name carries an edit icon, because a title otherwise reads as read-only. Tapping it opens the
+   **activity picker**: a name field over the §9.6 suggestions, which relabels this entry (§6.10),
+   with "Rename or recolour…" demoted to a footer row for the all-history edit (§6.7). Like the note,
+   the relabel commits on its own rather than through **Save**, so it is its own undo step (§7.5).
+   The sheet closes behind it — unless times are unsaved, when closing would silently drop them; it
+   then stays open showing the new activity, and **Save** still applies.
    The note commits when the field lets go rather than through **Save**, so one note change is one
    undo step (§7.5) and is never bundled with a time change. Enter inserts a line; a note is prose.
 2. **Start**, **End**, **Duration** — one group with hairlines between the rows, not three loose
@@ -1060,6 +1063,8 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 **Unit — relabelling (§6.10).** `relabelKeepsTimesAndNote` ·
 `relabelResolvesAnExistingActivityByNameKey` · `relabelCreatesTheActivityWhenTheNameIsNew` ·
 `relabelIsUndoable` · `relabelToTheSameActivityChangesNothing` · `relabelWorksOnTheRunningEntry`.
+
+**Unit — splitting (§6.6).** `splitReturnsTheSecondHalf`.
 
 **Unit — boundary math (§7).** `draggingSharedBoundaryConservesTotalTrackedTime` ·
 `draggingFreeEdgeGrowsIntoGapOnly` · `clampStopsAtNeighbourMinusMinimum` ·

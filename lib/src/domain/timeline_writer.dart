@@ -528,7 +528,10 @@ class TimelineWriter {
 
   /// Splits one entry in two at [atUtc], both halves keeping the activity and
   /// note (SPEC §6.6).
-  Future<UndoToken> split({
+  ///
+  /// Returns the second half as well as the undo, because that is the half the
+  /// UI opens next: a split is usually the first step of relabelling it.
+  Future<({TimeEntry second, UndoToken undo})> split({
     required String entryId,
     required DateTime atUtc,
   }) async {
@@ -564,10 +567,20 @@ class TimelineWriter {
             ),
           );
       await _validateAround(newId, now);
-      return _undoToken(
-        'Split entry',
-        snapshots: <TimeEntryRow>[row],
-        createdIds: <String>[newId],
+      return (
+        second: TimeEntry(
+          id: newId,
+          activityId: entry.activityId,
+          startUtc: at,
+          endUtc: entry.endUtc,
+          tzName: zone,
+          note: entry.note,
+        ),
+        undo: _undoToken(
+          'Split entry',
+          snapshots: <TimeEntryRow>[row],
+          createdIds: <String>[newId],
+        ),
       );
     });
   }
