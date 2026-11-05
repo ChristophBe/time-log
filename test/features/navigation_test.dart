@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:flutter/services.dart';
 import 'package:time_log/src/app/router.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
@@ -9,6 +11,7 @@ import 'package:time_log/src/features/entry/entry_sheet.dart';
 import 'package:time_log/src/features/shortcuts/shortcuts_sheet.dart';
 import 'package:time_log/src/features/history/history_screen.dart';
 import 'package:time_log/src/features/settings/settings_screen.dart';
+import 'package:time_log/src/features/today/today_providers.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
 
 import '../support/pump_app.dart';
@@ -48,6 +51,64 @@ void main() {
     // Save and offers an Undo that can remove the entry on show (SPEC §6.6).
     final sheet = tester.element(find.byType(EntrySheet));
     expect(Navigator.of(sheet), Navigator.of(sheet, rootNavigator: true));
+  });
+
+  group('deep links (SPEC §8)', () {
+    final entry = TimeEntry(
+      id: 'e1',
+      activityId: 'a1',
+      startUtc: DateTime.utc(2026, 3, 8, 9),
+      endUtc: DateTime.utc(2026, 3, 8, 10),
+      tzName: 'UTC',
+    );
+
+    Future<WidgetHarness> pumpAt(WidgetTester tester, String location) async {
+      final h = WidgetHarness(now: now);
+      when(() => h.entryRepository.findEntry(any())).thenAnswer(
+        (invocation) async =>
+            invocation.positionalArguments.first == entry.id ? entry : null,
+      );
+      await h.pump(
+        tester,
+        const SizedBox.shrink(),
+        routerConfig: buildRouter(initialLocation: location),
+      );
+      // The link is acted on after the first frame.
+      await tester.pumpAndSettle();
+      return h;
+    }
+
+    int shownDay(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(TodayScreen)))
+            .read(selectedDayProvider)
+            .day;
+
+    testWidgets('/day/:isoDate opens on that day', (tester) async {
+      await pumpAt(tester, '/day/2026-03-08');
+      expect(shownDay(tester), 8);
+    });
+
+    testWidgets('a malformed date falls back to today', (tester) async {
+      await pumpAt(tester, '/day/not-a-date');
+      expect(shownDay(tester), 11);
+    });
+
+    testWidgets('/entry/:id opens the entry sheet over its day', (
+      tester,
+    ) async {
+      await pumpAt(tester, '/entry/e1');
+
+      expect(find.byType(EntrySheet), findsOneWidget);
+      expect(shownDay(tester), 8, reason: 'the day the entry is on');
+    });
+
+    testWidgets('an unknown entry says so and stays on today', (tester) async {
+      await pumpAt(tester, '/entry/gone');
+
+      expect(find.byType(EntrySheet), findsNothing);
+      expect(find.text('That entry no longer exists'), findsOneWidget);
+      expect(shownDay(tester), 11);
+    });
   });
 
   testWidgets('a phone gets a bottom bar', (tester) async {

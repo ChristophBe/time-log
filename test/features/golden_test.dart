@@ -196,14 +196,21 @@ void main() {
     await expectGolden(tester, 'nav-shell-light');
   });
 
-  testWidgets('today, running, at 2x text scale', (tester) async {
-    await working().pump(
+  // SPEC §12: 2x in both themes, because dark is where a contrast that only
+  // just passes at 1x is most likely to give out once the text grows.
+  for (final brightness in Brightness.values) {
+    testWidgets('today, running, at 2x text scale (${brightness.name})', (
       tester,
-      const TodayScreen(),
-      textScaler: const TextScaler.linear(2),
-    );
-    await expectGolden(tester, 'today-running-light-2x');
-  });
+    ) async {
+      await working().pump(
+        tester,
+        const TodayScreen(),
+        textScaler: const TextScaler.linear(2),
+        brightness: brightness,
+      );
+      await expectGolden(tester, 'today-running-${brightness.name}-2x');
+    });
+  }
 
   for (final brightness in Brightness.values) {
     testWidgets('the export sheet (${brightness.name})', (tester) async {

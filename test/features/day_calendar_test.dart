@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
@@ -452,6 +454,72 @@ void main() {
       final after = tester.getSize(find.byType(EntryBlock)).height;
 
       expect(after, greaterThan(before));
+    });
+
+    group('Cmd/Ctrl + scroll', () {
+      Future<({double height, double offset})> scrollWheel(
+        WidgetTester tester, {
+        required bool withCommand,
+      }) async {
+        final h = WidgetHarness(
+          now: now,
+          activities: activities,
+          dayWindows: utcDays(),
+          entries: <TimeEntry>[
+            entryFor(
+              id: 'e1',
+              activityId: specs.id,
+              start: DateTime.utc(2026, 3, 10, 13),
+              end: DateTime.utc(2026, 3, 10, 14),
+            ),
+          ],
+        );
+        await h.pump(tester, const TodayScreen());
+        final scroll = find.byType(SingleChildScrollView).first;
+        final offsetBefore = tester
+            .state<ScrollableState>(
+              find.descendant(of: scroll, matching: find.byType(Scrollable)),
+            )
+            .position
+            .pixels;
+        final heightBefore = tester.getSize(find.byType(EntryBlock)).height;
+
+        // The suite runs as Android, where the command key is Ctrl.
+        if (withCommand) {
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        }
+        final mouse = TestPointer(1, PointerDeviceKind.mouse)
+          ..hover(tester.getCenter(scroll));
+        await tester.sendEventToBinding(mouse.scroll(const Offset(0, -120)));
+        if (withCommand) {
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        }
+        await tester.pumpAndSettle();
+
+        final offsetAfter = tester
+            .state<ScrollableState>(
+              find.descendant(of: scroll, matching: find.byType(Scrollable)),
+            )
+            .position
+            .pixels;
+        return (
+          height: tester.getSize(find.byType(EntryBlock)).height - heightBefore,
+          offset: offsetAfter - offsetBefore,
+        );
+      }
+
+      testWidgets('with the command key held, it zooms', (tester) async {
+        final change = await scrollWheel(tester, withCommand: true);
+        expect(change.height, greaterThan(0), reason: 'wheel up zooms in');
+      });
+
+      testWidgets('without it, the wheel scrolls and does not zoom', (
+        tester,
+      ) async {
+        final change = await scrollWheel(tester, withCommand: false);
+        expect(change.height, 0);
+        expect(change.offset, isNot(0));
+      });
     });
 
     testWidgets('zoom stops at the documented maximum', (tester) async {

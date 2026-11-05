@@ -153,7 +153,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(ListTile));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('fill-gap-name')), 'Email');
+      await tester.enterText(
+        find.byKey(const Key('activity-name-field')),
+        'Email',
+      );
       await tester.pump();
       await tester.tap(find.text('Add entry'));
       await tester.pumpAndSettle();

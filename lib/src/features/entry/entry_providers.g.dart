@@ -97,20 +97,20 @@ final class EntryNeighboursFamily extends $Family
   String toString() => r'entryNeighboursProvider';
 }
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked for naming a span after the fact (SPEC §6.10, §8.2, §9.6).
 ///
 /// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// there, picking the running one would be a no-op; when relabelling it is the
+/// entry's current one; filling a gap excludes nothing.
 
 @ProviderFor(relabelSuggestions)
 final relabelSuggestionsProvider = RelabelSuggestionsFamily._();
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked for naming a span after the fact (SPEC §6.10, §8.2, §9.6).
 ///
 /// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// there, picking the running one would be a no-op; when relabelling it is the
+/// entry's current one; filling a gap excludes nothing.
 
 final class RelabelSuggestionsProvider
     extends
@@ -122,14 +122,14 @@ final class RelabelSuggestionsProvider
     with
         $FutureModifier<List<ActivitySuggestion>>,
         $StreamProvider<List<ActivitySuggestion>> {
-  /// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+  /// Activities ranked for naming a span after the fact (SPEC §6.10, §8.2, §9.6).
   ///
   /// The same ranking the start composer uses, excluding a different activity:
-  /// there, picking the running one would be a no-op; here it is the entry's
-  /// current one.
+  /// there, picking the running one would be a no-op; when relabelling it is the
+  /// entry's current one; filling a gap excludes nothing.
   RelabelSuggestionsProvider._({
     required RelabelSuggestionsFamily super.from,
-    required (String, String) super.argument,
+    required (String?, String) super.argument,
   }) : super(
          retry: null,
          name: r'relabelSuggestionsProvider',
@@ -156,7 +156,7 @@ final class RelabelSuggestionsProvider
 
   @override
   Stream<List<ActivitySuggestion>> create(Ref ref) {
-    final argument = this.argument as (String, String);
+    final argument = this.argument as (String?, String);
     return relabelSuggestions(ref, argument.$1, argument.$2);
   }
 
@@ -172,19 +172,19 @@ final class RelabelSuggestionsProvider
 }
 
 String _$relabelSuggestionsHash() =>
-    r'651994075f4eea39c1a7b849d06b3f724aafd0b7';
+    r'02135e7fad311d906177ecb63181ac910da14a79';
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked for naming a span after the fact (SPEC §6.10, §8.2, §9.6).
 ///
 /// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// there, picking the running one would be a no-op; when relabelling it is the
+/// entry's current one; filling a gap excludes nothing.
 
 final class RelabelSuggestionsFamily extends $Family
     with
         $FunctionalFamilyOverride<
           Stream<List<ActivitySuggestion>>,
-          (String, String)
+          (String?, String)
         > {
   RelabelSuggestionsFamily._()
     : super(
@@ -195,13 +195,13 @@ final class RelabelSuggestionsFamily extends $Family
         isAutoDispose: true,
       );
 
-  /// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+  /// Activities ranked for naming a span after the fact (SPEC §6.10, §8.2, §9.6).
   ///
   /// The same ranking the start composer uses, excluding a different activity:
-  /// there, picking the running one would be a no-op; here it is the entry's
-  /// current one.
+  /// there, picking the running one would be a no-op; when relabelling it is the
+  /// entry's current one; filling a gap excludes nothing.
 
-  RelabelSuggestionsProvider call(String excludeActivityId, String query) =>
+  RelabelSuggestionsProvider call(String? excludeActivityId, String query) =>
       RelabelSuggestionsProvider._(
         argument: (excludeActivityId, query),
         from: this,

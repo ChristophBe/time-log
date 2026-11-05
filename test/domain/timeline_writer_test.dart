@@ -44,6 +44,29 @@ void main() {
       expect(running, hasLength(1));
     });
 
+    test('concurrentStartsDoNotCreateTwoRunning', () async {
+      // Two starts in flight at once — a double tap, a shortcut and a click.
+      // Each is its own transaction, so the second sees the first's running
+      // entry and hands over from it rather than inserting beside it.
+      await h.writer.startByName(name: 'A');
+      h.clock.advance(const Duration(minutes: 10));
+      await Future.wait(<Future<StartOutcome>>[
+        h.writer.startByName(name: 'B'),
+        h.writer.startByName(name: 'C'),
+      ]);
+
+      final running = await h.db.runningEntry().get();
+      expect(running, hasLength(1), reason: 'SPEC §4.1');
+      final entries = await h.entries();
+      for (var i = 0; i < entries.length - 1; i++) {
+        expect(
+          entries[i].endUtc!.isAfter(entries[i + 1].startUtc),
+          isFalse,
+          reason: 'SPEC §4.2',
+        );
+      }
+    });
+
     test('noEntryOverlapsAnother across a long session', () async {
       for (final name in <String>['A', 'B', 'C', 'D']) {
         await h.writer.startByName(name: name);
@@ -411,6 +434,34 @@ void main() {
 
       await undo.undo();
       expect((await h.entries()).single.id, stopped.entryId);
+    });
+
+    test('tombstones are purged after 30 days, and only they are', () async {
+      // SPEC §5.1: a soft delete is kept for 30 days and then purged.
+      Future<String> finished(String name) async {
+        await h.writer.startByName(name: name);
+        h.clock.advance(const Duration(minutes: 30));
+        return (await h.writer.stop()).entryId!;
+      }
+
+      final old = await finished('Old');
+      await h.writer.delete(old);
+      h.clock.advance(const Duration(days: 2));
+      final recent = await finished('Recent');
+      await h.writer.delete(recent);
+      final kept = await finished('Kept');
+
+      h.clock.advance(const Duration(days: 29));
+      final purged = await h.writer.purgeDeleted();
+
+      final ids = (await h.db.select(h.db.timeEntries).get())
+          .map((r) => r.id)
+          .toSet();
+      expect(purged, 1);
+      expect(ids, isNot(contains(old)), reason: '31 days a tombstone');
+      expect(ids, contains(recent), reason: 'a tombstone for under 30 days');
+      expect(ids, contains(kept), reason: 'live rows are never purged');
+      expect(await h.writer.purgeDeleted(), 0, reason: 'idempotent');
     });
   });
 

@@ -1,9 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/app_info.dart';
+import '../../core/clock.dart';
 import '../../core/formatters.dart';
+import '../../data/db/database_provider.dart';
+import '../../data/repositories/settings_repository.dart';
+import '../../domain/models/app_settings.dart';
+import '../../domain/timeline/day_window.dart';
+import '../../domain/timeline/invariants.dart';
+import '../../domain/timeline/new_entry_span.dart';
+import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/time_entry.dart';
 import '../../domain/timeline_writer.dart';
 import '../../app/design.dart';
@@ -11,8 +21,10 @@ import '../../app/platform_style.dart';
 import '../../app/shortcuts.dart';
 import '../calendar/calendar_providers.dart';
 import '../calendar/day_calendar.dart';
+import '../calendar/fill_gap_sheet.dart';
 import '../calendar/zoom_control.dart';
 import '../entry/entry_sheet.dart';
+import '../export/export_providers.dart';
 import '../presence/presence_providers.dart';
 import 'day_header.dart';
 import 'resume_action.dart';
@@ -27,9 +39,14 @@ import 'today_providers.dart';
 /// Stateful only to own the composer's [FocusNode], which `Cmd/Ctrl+N` needs a
 /// handle on (SPEC §10.5).
 class TodayScreen extends ConsumerStatefulWidget {
-  const TodayScreen({super.key, this.isoDate});
+  const TodayScreen({super.key, this.isoDate, this.entryId});
 
+  /// The day a `/day/:isoDate` link asked for (SPEC §8). One that does not
+  /// parse is ignored rather than refused: today is a fine place to land.
   final String? isoDate;
+
+  /// The entry a `/entry/:id` link asked for, whose sheet opens over its day.
+  final String? entryId;
 
   @override
   ConsumerState<TodayScreen> createState() => _TodayScreenState();
@@ -47,8 +64,48 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
   /// device's safe area.
   double _headerHeight = 0;
 
+  /// Keeps the selected day for as long as this screen shows it.
+  ///
+  /// The provider is auto-dispose and is otherwise only watched through what is
+  /// derived from it, so a day set before anything derived has subscribed — a
+  /// deep link, on the first frame — would be dropped and rebuilt as today.
+  late final ProviderSubscription<DayWindow> _day;
+
+  @override
+  void initState() {
+    super.initState();
+    _day = ref.listenManual(selectedDayProvider, (_, _) {});
+    if (widget.isoDate != null || widget.entryId != null) {
+      // After the first frame: opening a sheet needs a navigator that is
+      // already built, and changing the day mid-build is not allowed.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openDeepLink());
+    }
+  }
+
+  Future<void> _openDeepLink() async {
+    final days = ref.read(selectedDayProvider.notifier);
+    final date = DateTime.tryParse(widget.isoDate ?? '');
+    if (date != null) days.goToDate(date);
+
+    final entryId = widget.entryId;
+    if (entryId == null) return;
+    final entry = await ref
+        .read(timeEntryRepositoryProvider)
+        .findEntry(entryId);
+    if (!mounted) return;
+    if (entry == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That entry no longer exists')),
+      );
+      return;
+    }
+    days.goTo(ref.read(dayWindowsProvider).containing(entry.startUtc));
+    await showEntrySheet(context, entry);
+  }
+
   @override
   void dispose() {
+    _day.close();
     _composer.dispose();
     _screenFocus.dispose();
     super.dispose();
@@ -95,7 +152,8 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
             body: entriesAsync.when(
               loading: () =>
                   const Center(child: CircularProgressIndicator.adaptive()),
-              error: (error, _) => _DatabaseError(error: error),
+              error: (error, stack) =>
+                  _DatabaseError(error: error, stack: stack),
               data: (_) => _body(context),
             ),
           ),
@@ -418,15 +476,63 @@ class _DayBody extends ConsumerWidget {
   }
 }
 
-class _EmptyDay extends StatelessWidget {
+/// SPEC §8.2's empty state. It points at the composer, which is already on
+/// screen, and offers **Add entry** for time that has already passed — the
+/// composer can only start something now.
+class _EmptyDay extends ConsumerWidget {
   const _EmptyDay();
 
+  Future<void> _add(
+    BuildContext context,
+    WidgetRef ref,
+    ({DateTime startUtc, DateTime endUtc}) span,
+  ) async {
+    final use24h = (ref.read(appSettingsProvider).value ?? const AppSettings())
+        .use24HourClock;
+    final name = await showFillGapSheet(
+      context,
+      startLocal: span.startUtc.toLocal(),
+      endLocal: span.endUtc.toLocal(),
+      duration: span.endUtc.difference(span.startUtc),
+      use24h: use24h,
+      title: 'Add entry',
+    );
+    if (name == null || !context.mounted) return;
+    try {
+      final undo = await ref
+          .read(timelineWriterProvider)
+          .insertEntry(
+            name: name,
+            startUtc: span.startUtc,
+            endUtc: span.endUtc,
+          );
+      if (!context.mounted) return;
+      showUndoableFeedback(context, message: 'Added $name', undo: undo);
+    } on InvariantViolation catch (error) {
+      if (!context.mounted) return;
+      showUndoableFeedback(context, message: error.detail, undo: null);
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => const _Notice(
-    icon: Icons.schedule_outlined,
-    title: 'No entries for this day',
-    body: 'Type what you are doing in the field below.',
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final span = newEntrySpan(
+      day: ref.watch(selectedDayProvider),
+      nowUtc: ref.watch(appClockProvider).nowUtc(),
+    );
+    return _Notice(
+      icon: Icons.schedule_outlined,
+      title: 'No entries for this day',
+      body: 'Type what you are doing in the field below.',
+      actions: <Widget>[
+        if (span != null)
+          OutlinedButton(
+            onPressed: () => _add(context, ref, span),
+            child: const Text('Add entry'),
+          ),
+      ],
+    );
+  }
 }
 
 /// The one way this app states something in the middle of an empty screen:
@@ -440,6 +546,7 @@ class _Notice extends StatelessWidget {
     required this.body,
     this.detail,
     this.tone,
+    this.actions = const <Widget>[],
   });
 
   final IconData icon;
@@ -447,6 +554,9 @@ class _Notice extends StatelessWidget {
   final String body;
   final String? detail;
   final _NoticeTone? tone;
+
+  /// What can be done about it, as buttons under the text.
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -501,6 +611,15 @@ class _Notice extends StatelessWidget {
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
+            if (actions.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Insets.lg),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: Insets.sm,
+                runSpacing: Insets.sm,
+                children: actions,
+              ),
+            ],
           ],
         ),
       ),
@@ -511,14 +630,44 @@ class _Notice extends StatelessWidget {
 enum _NoticeTone { error }
 
 /// SPEC §9.5: a database failure explains itself rather than showing an empty
-/// timeline, which would read as data loss.
-class _DatabaseError extends StatelessWidget {
-  const _DatabaseError({required this.error});
+/// timeline, which would read as data loss — and offers the two things worth
+/// doing about it: try again, and hand the details to someone who can help.
+class _DatabaseError extends ConsumerWidget {
+  const _DatabaseError({required this.error, required this.stack});
 
   final Object error;
+  final StackTrace stack;
+
+  /// Opening again from scratch: the database first, then the read that
+  /// failed, in case the database was fine and only the query was not.
+  void _retry(WidgetRef ref) {
+    ref.invalidate(appDatabaseProvider);
+    ref.invalidate(dayEntriesProvider);
+  }
+
+  Future<void> _exportDiagnostics(WidgetRef ref) {
+    final now = ref.read(appClockProvider).nowUtc();
+    return ref
+        .read(exportDeliveryProvider)
+        .send(
+          fileName: 'time-log-diagnostics.txt',
+          mimeType: 'text/plain',
+          text: <String>[
+            'time-log diagnostics',
+            'version: $appVersion',
+            'platform: ${kIsWeb ? 'web' : defaultTargetPlatform.name}',
+            'at: ${now.toIso8601String()}',
+            '',
+            'The database could not be opened:',
+            '$error',
+            '',
+            '$stack',
+          ].join('\n'),
+        );
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Also to the console, so a failure is diagnosable from a log rather than
     // only from the screen.
     debugPrint('time-log: the database could not be opened: $error');
@@ -528,6 +677,13 @@ class _DatabaseError extends StatelessWidget {
       body: 'Nothing has been lost; the app could not read its database.',
       detail: '$error',
       tone: _NoticeTone.error,
+      actions: <Widget>[
+        FilledButton(onPressed: () => _retry(ref), child: const Text('Retry')),
+        OutlinedButton(
+          onPressed: () => _exportDiagnostics(ref),
+          child: const Text('Export diagnostics'),
+        ),
+      ],
     );
   }
 }

@@ -156,7 +156,7 @@ void main() {
     expect(await all(), isEmpty);
   });
 
-  test('logging a span adds an entry and keeps the session', () async {
+  test('loggingASpanAddsAnEntryAndKeepsTheSession', () async {
     final writer = TimelineWriter(
       db: db,
       clock: clock,

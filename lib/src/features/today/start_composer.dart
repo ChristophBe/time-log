@@ -13,6 +13,7 @@ import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
 import '../entry/activity_suggestion_row.dart';
+import '../entry/suggestion_keyboard.dart';
 import 'start_action.dart';
 import 'today_providers.dart';
 
@@ -112,36 +113,21 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
     _start(name);
   }
 
-  KeyEventResult _onKey(List<ActivitySuggestion> suggestions, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final highlighted = _state.highlighted;
-    switch (event.logicalKey) {
-      case LogicalKeyboardKey.arrowDown:
-        highlighted.value = suggestions.isEmpty
-            ? -1
-            : (highlighted.value + 1).clamp(0, suggestions.length - 1);
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.arrowUp:
-        highlighted.value = highlighted.value <= 0 ? -1 : highlighted.value - 1;
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.escape:
+  KeyEventResult _onKey(List<ActivitySuggestion> suggestions, KeyEvent event) =>
+      handleSuggestionKey(
+        event,
+        suggestions: suggestions,
+        highlighted: _state.highlighted.value,
+        onHighlight: (index) => _state.highlighted.value = index,
+        onPickSuggestion: (s) => _start(s.activity.name),
+        onCommitTyped: _submitTyped,
         // There is no modal to dismiss any more, so Escape abandons what was
         // typed and hands the screen back to the day.
-        _state.reset();
-        widget.onRelease();
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.enter:
-      case LogicalKeyboardKey.numpadEnter:
-        if (highlighted.value >= 0 && highlighted.value < suggestions.length) {
-          _start(suggestions[highlighted.value].activity.name);
-        } else {
-          _submitTyped();
-        }
-        return KeyEventResult.handled;
-      default:
-        return KeyEventResult.ignored;
-    }
-  }
+        onEscape: () {
+          _state.reset();
+          widget.onRelease();
+        },
+      );
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(

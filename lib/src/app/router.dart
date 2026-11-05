@@ -13,8 +13,11 @@ final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 /// A stateful shell, so each of the three destinations keeps its own navigation
 /// stack and its own scroll position: switching to History and back should land
 /// you on the day you were reading, not reset it.
-GoRouter buildRouter() => GoRouter(
+///
+/// [initialLocation] is for tests; the app starts wherever the platform says.
+GoRouter buildRouter({String? initialLocation}) => GoRouter(
   navigatorKey: _rootKey,
+  initialLocation: initialLocation,
   routes: <RouteBase>[
     StatefulShellRoute.indexedStack(
       builder: (_, _, shell) => AppShell(shell: shell),
@@ -31,6 +34,12 @@ GoRouter buildRouter() => GoRouter(
                   path: 'day/:isoDate',
                   builder: (_, state) =>
                       TodayScreen(isoDate: state.pathParameters['isoDate']),
+                ),
+                // `/entry/:id` opens that entry's sheet over its own day.
+                GoRoute(
+                  path: 'entry/:id',
+                  builder: (_, state) =>
+                      TodayScreen(entryId: state.pathParameters['id']),
                 ),
               ],
             ),

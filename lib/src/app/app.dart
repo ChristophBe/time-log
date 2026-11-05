@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/clock.dart';
 import '../data/repositories/settings_repository.dart';
+import '../domain/timeline_writer.dart';
 import '../domain/models/app_settings.dart';
 import '../features/today/day_rollover.dart';
 import '../features/presence/presence_controller.dart';
@@ -30,6 +31,9 @@ class _TimeLogAppState extends ConsumerState<TimeLogApp> {
     // §4.5 forbids writing the cut before it happened.
     _lifecycle = AppLifecycleListener(onResume: _rollOver);
     _rollOver();
+    // Tombstones past 30 days (SPEC §5.1). Once per launch is plenty for a
+    // limit counted in days.
+    unawaited(ref.read(timelineWriterProvider).purgeDeleted());
   }
 
   @override

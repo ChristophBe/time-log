@@ -2,11 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart' show CupertinoScrollbar;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/design.dart';
 import '../../app/platform_style.dart';
+import '../../app/shortcuts.dart';
 import '../../app/theme.dart';
 import '../../core/clock.dart';
 import '../../core/formatters.dart';
@@ -238,17 +240,41 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
       );
       if (outcome.wasClamped) await HapticFeedback.selectionClick();
       if (!mounted) return;
+      // SPEC §10.4's wording: which entry, which edge, and where it landed, in
+      // the clock the reader chose.
+      final name =
+          ref
+              .read(activitiesByIdProvider)
+              .value?[preview.target.activityId]
+              ?.name ??
+          'The entry';
+      final use24h =
+          (ref.read(appSettingsProvider).value ?? const AppSettings())
+              .use24HourClock;
       showUndoableFeedback(
         context,
         message:
-            '${edge == BoundaryEdge.start ? 'Start' : 'End'} moved to '
-            '${formatTimeOfDay(outcome.appliedUtc.toLocal(), use24h: true)}',
+            '$name now ${edge == BoundaryEdge.start ? 'starts' : 'ends'} at '
+            '${formatTimeOfDay(outcome.appliedUtc.toLocal(), use24h: use24h)}',
         undo: outcome.undo,
       );
     } on InvariantViolation catch (error) {
       if (!mounted) return;
       showUndoableFeedback(context, message: error.detail, undo: null);
     }
+  }
+
+  /// `Cmd/Ctrl` + scroll zooms, the desktop's pinch (SPEC §8.2, §10.1).
+  ///
+  /// Claimed through the pointer-signal resolver so that a zooming wheel does
+  /// not also scroll the day; without the key held, the scroll view gets it.
+  /// Exponential in the wheel's travel, so a notch in and a notch out cancel.
+  void _zoomOnCommandScroll(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !isCommandKeyPressed) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (event) {
+      final dy = (event as PointerScrollEvent).scrollDelta.dy;
+      ref.read(calendarZoomProvider.notifier).scaleBy(math.exp(-dy / 200));
+    });
   }
 
   /// SPEC §8.2: a gap is tappable, and filling it covers exactly the gap.
@@ -347,116 +373,122 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
           padding: EdgeInsets.only(top: widget.topInset),
           // Dragging a boundary must not also scroll the view.
           physics: _drag == null ? null : const NeverScrollableScrollPhysics(),
-          child: SizedBox(
-            key: _stackKey,
-            height: metrics.totalHeight,
-            child: Stack(
-              children: <Widget>[
-                _Axis(
-                  metrics: metrics,
-                  gutter: gutter,
-                  use24h: settings.use24HourClock,
-                ),
-                Positioned.fill(
-                  child: ActiveRail(
+          // Inside the scroll view rather than around it: the deepest listener
+          // claims a pointer signal first, so this one decides whether a
+          // scroll wheel zooms or scrolls.
+          child: Listener(
+            onPointerSignal: _zoomOnCommandScroll,
+            child: SizedBox(
+              key: _stackKey,
+              height: metrics.totalHeight,
+              child: Stack(
+                children: <Widget>[
+                  _Axis(
                     metrics: metrics,
                     gutter: gutter,
-                    now: now,
                     use24h: settings.use24HourClock,
                   ),
-                ),
-                for (final gap in timeline.gaps)
-                  Positioned(
-                    top: metrics.offsetFor(gap.startUtc),
-                    left: gutter,
-                    right: Insets.sm,
-                    height: metrics.renderedHeightFor(gap.duration),
-                    // A gap only takes taps once it is big enough to be a legal
-                    // target (SPEC §10.2). Below that the honest answer is to
-                    // zoom in — which is already the answer for short entries
-                    // (SPEC §8.2) — rather than to offer a four-pixel button.
-                    child: GapBlock(
-                      duration: gap.duration,
-                      startLocal: gap.startUtc.toLocal(),
-                      endLocal: gap.endUtc.toLocal(),
+                  Positioned.fill(
+                    child: ActiveRail(
+                      metrics: metrics,
+                      gutter: gutter,
+                      now: now,
                       use24h: settings.use24HourClock,
-                      onTap:
-                          widget.onEntryTap == null ||
-                              metrics.renderedHeightFor(gap.duration) <
-                                  kMinTapTarget
-                          ? null
-                          : () => _fillGap(
-                              gap.startUtc,
-                              gap.endUtc,
-                              settings.use24HourClock,
-                            ),
                     ),
                   ),
-                for (final cluster in clusterSegments(
-                  timeline.segments,
-                  pixelsPerMinute: metrics.pixelsPerMinute,
-                  minHeight: metrics.minBlockHeight,
-                ))
-                  if (!cluster.isCluster || _expandedCluster == cluster.id)
-                    for (final segment in cluster.segments)
-                      _positionedSegment(
-                        segment: segment,
-                        metrics: metrics,
-                        preview: preview,
-                        now: now,
-                        gutter: gutter,
-                        settings: settings,
-                        step: step,
-                        activities: activities,
-                      )
-                  else
+                  for (final gap in timeline.gaps)
                     Positioned(
-                      top: metrics.offsetFor(cluster.first.startUtc),
+                      top: metrics.offsetFor(gap.startUtc),
                       left: gutter,
                       right: Insets.sm,
-                      height: metrics.minBlockHeight,
-                      child: _ShortEntriesChip(
-                        count: cluster.segments.length,
-                        onTap: () =>
-                            setState(() => _expandedCluster = cluster.id),
+                      height: metrics.renderedHeightFor(gap.duration),
+                      // A gap only takes taps once it is big enough to be a legal
+                      // target (SPEC §10.2). Below that the honest answer is to
+                      // zoom in — which is already the answer for short entries
+                      // (SPEC §8.2) — rather than to offer a four-pixel button.
+                      child: GapBlock(
+                        duration: gap.duration,
+                        startLocal: gap.startUtc.toLocal(),
+                        endLocal: gap.endUtc.toLocal(),
+                        use24h: settings.use24HourClock,
+                        onTap:
+                            widget.onEntryTap == null ||
+                                metrics.renderedHeightFor(gap.duration) <
+                                    kMinTapTarget
+                            ? null
+                            : () => _fillGap(
+                                gap.startUtc,
+                                gap.endUtc,
+                                settings.use24HourClock,
+                              ),
                       ),
                     ),
-                if (metrics.window.contains(now))
-                  Positioned(
-                    top: metrics.offsetFor(now),
-                    left: 0,
-                    right: Insets.sm,
-                    // The line sits at the centre of the row that carries the
-                    // pill, so the row has to be lifted by half its own height
-                    // for the line to land on the instant. Half of *its own*
-                    // height, which only it knows: the pill grows with the text
-                    // scale. Positioned it by the row's top instead, and the
-                    // line drew itself nine pixels into the future — the same
-                    // mistake the hour rules used to make, and the reason the
-                    // running block could never quite reach it.
-                    child: FractionalTranslation(
-                      translation: const Offset(0, -0.5),
-                      child: NowLine(
+                  for (final cluster in clusterSegments(
+                    timeline.segments,
+                    pixelsPerMinute: metrics.pixelsPerMinute,
+                    minHeight: metrics.minBlockHeight,
+                  ))
+                    if (!cluster.isCluster || _expandedCluster == cluster.id)
+                      for (final segment in cluster.segments)
+                        _positionedSegment(
+                          segment: segment,
+                          metrics: metrics,
+                          preview: preview,
+                          now: now,
+                          gutter: gutter,
+                          settings: settings,
+                          step: step,
+                          activities: activities,
+                        )
+                    else
+                      Positioned(
+                        top: metrics.offsetFor(cluster.first.startUtc),
+                        left: gutter,
+                        right: Insets.sm,
+                        height: metrics.minBlockHeight,
+                        child: _ShortEntriesChip(
+                          count: cluster.segments.length,
+                          onTap: () =>
+                              setState(() => _expandedCluster = cluster.id),
+                        ),
+                      ),
+                  if (metrics.window.contains(now))
+                    Positioned(
+                      top: metrics.offsetFor(now),
+                      left: 0,
+                      right: Insets.sm,
+                      // The line sits at the centre of the row that carries the
+                      // pill, so the row has to be lifted by half its own height
+                      // for the line to land on the instant. Half of *its own*
+                      // height, which only it knows: the pill grows with the text
+                      // scale. Positioned it by the row's top instead, and the
+                      // line drew itself nine pixels into the future — the same
+                      // mistake the hour rules used to make, and the reason the
+                      // running block could never quite reach it.
+                      child: FractionalTranslation(
+                        translation: const Offset(0, -0.5),
+                        child: NowLine(
+                          label: formatTimeOfDay(
+                            now.toLocal(),
+                            use24h: settings.use24HourClock,
+                          ),
+                          gutterWidth: gutter,
+                        ),
+                      ),
+                    ),
+                  if (preview != null)
+                    Positioned(
+                      top: metrics.offsetFor(preview.applied) - 12,
+                      left: Insets.sm,
+                      child: _DragReadout(
                         label: formatTimeOfDay(
-                          now.toLocal(),
+                          preview.applied.toLocal(),
                           use24h: settings.use24HourClock,
                         ),
-                        gutterWidth: gutter,
                       ),
                     ),
-                  ),
-                if (preview != null)
-                  Positioned(
-                    top: metrics.offsetFor(preview.applied) - 12,
-                    left: Insets.sm,
-                    child: _DragReadout(
-                      label: formatTimeOfDay(
-                        preview.applied.toLocal(),
-                        use24h: settings.use24HourClock,
-                      ),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

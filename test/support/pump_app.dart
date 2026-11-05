@@ -51,6 +51,7 @@ class WidgetHarness {
     this.dayWindows,
     this.runStart,
     this.runningStream,
+    this.dayEntriesStream,
     this.neighbours = (previous: null, next: null),
     this.sessions = const <ActiveSession>[],
     this.presencePort = const UnsupportedPresencePort(),
@@ -73,6 +74,11 @@ class WidgetHarness {
   /// midnight under a screen that is already on display. Replaces [running] as
   /// the source of `runningEntryProvider` when it is given.
   final Stream<TimeEntry?>? runningStream;
+
+  /// The day's entries as a fresh stream per subscription, for a test that
+  /// needs the read to fail and then succeed — SPEC §9.5's Retry. Replaces
+  /// [entries] as the source of `dayEntriesProvider` when it is given.
+  final Stream<List<TimeEntry>> Function()? dayEntriesStream;
 
   /// When the running entry's *run* began, which is earlier than the entry
   /// itself once SPEC §6.11 has cut it at a midnight. Defaults to the running
@@ -142,7 +148,9 @@ class WidgetHarness {
             (ref) => runningStream ?? Stream<TimeEntry?>.value(running),
           ),
           dayEntriesProvider.overrideWith(
-            (ref) => Stream<List<TimeEntry>>.value(entries),
+            (ref) =>
+                dayEntriesStream?.call() ??
+                Stream<List<TimeEntry>>.value(entries),
           ),
           activitiesByIdProvider.overrideWith(
             (ref) => Stream<Map<String, Activity>>.value(activities),

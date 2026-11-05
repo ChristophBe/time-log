@@ -15,6 +15,14 @@ SingleActivator commandActivator(
     ? SingleActivator(key, meta: true, shift: shift)
     : SingleActivator(key, control: true, shift: shift);
 
+/// Whether the command key, as [commandActivator] means it, is held now.
+///
+/// For the one binding that is not a key press: `Cmd/Ctrl` + scroll to zoom
+/// (SPEC §8.2).
+bool get isCommandKeyPressed => _isApple
+    ? HardwareKeyboard.instance.isMetaPressed
+    : HardwareKeyboard.instance.isControlPressed;
+
 /// How to say the command key in a menu or a help sheet.
 String get commandKeyLabel => _isApple ? 'Cmd' : 'Ctrl';
 

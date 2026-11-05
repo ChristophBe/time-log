@@ -110,7 +110,7 @@ have been built and run by hand; the other four are scaffolded, and CI is what c
 push to `main` builds all six, because "nothing silently missing on a platform" (SPEC §14.12) is not
 a claim this machine can check on its own with no Android SDK on it.
 
-Correctness does not depend on a device: all 485 tests run on the Dart VM. The one
+Correctness does not depend on a device: all 553 tests run on the Dart VM. The one
 exception is the native half of active time (SPEC §9.9), which needs a real Mac and a real lock screen.
 
 On the web, drift picks the best storage the browser offers. `flutter run`'s dev server does not send
@@ -127,8 +127,9 @@ TZ=Europe/Berlin flutter test
 ```
 
 **The timezone is not optional.** Fixtures are UTC instants on 2026-03-10 and the UI renders local
-time (SPEC §5.3), so the suite assumes a **UTC+01:00** rendering zone; 18 tests — 13 of the 15
-goldens, four in `editing_test.dart` and one in `day_calendar_test.dart` — fail under `TZ=UTC`. Dart takes
+time (SPEC §5.3), so the suite assumes a **UTC+01:00** rendering zone; 19 tests — 14 of the 17
+goldens, three in `entry_editing_test.dart`, one in `boundary_editing_test.dart` and one in
+`day_calendar_test.dart` — fail under `TZ=UTC`. Dart takes
 the local zone from the process environment and nothing else, so exporting `TZ` is the fix rather
 than a workaround. Any zone at +01:00 on that date works; CI uses `Europe/Berlin`.
 
@@ -152,8 +153,11 @@ The suite is organised by what it protects, not by file:
   everything else on Linux (`flutter test --tags golden` / `--exclude-tags golden`).
 - `test/domain/presence/`, `test/data/active_session_repository_test.dart` — the active-time rules of
   SPEC §9.9, pure and then against real SQLite.
+- `test/data/performance_test.dart` — SPEC §9.4's one-day query at 50 000 entries: the query plan
+  exactly, the time loosely, because a CI runner is not the phone the 5 ms budget is for.
 - `test/architecture_test.dart` — no `DateTime.now()` outside `core/clock.dart`; `domain/timeline`
-  and `domain/models` import neither Flutter nor Drift.
+  and `domain/models` import neither Flutter nor Drift; `TimelineWriter` is the only writer of
+  `time_entries`, and `ActiveSessionRepository` of `active_sessions`.
 
 Widget tests run against fixed provider state and a mock writer, not a real database: drift's queries
 complete on the real event loop and deadlock inside `testWidgets`' fake-async zone. The database
