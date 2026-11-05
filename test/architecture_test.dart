@@ -29,6 +29,59 @@ void main() {
     );
   });
 
+  /// Files outside [allowed] that write [table], through drift or in raw SQL.
+  List<String> writersOf(String table, String driftName, Set<String> allowed) {
+    final drift = RegExp(
+      r'\b(into|update|delete)\(\s*\w*\.?' + driftName + r'\s*\)',
+    );
+    final sql = RegExp(
+      r'\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+' + table + r'\b',
+      caseSensitive: false,
+    );
+    return <String>[
+      for (final file in dartFiles)
+        if (!allowed.any(file.path.endsWith) &&
+            (drift.hasMatch(file.readAsStringSync()) ||
+                sql.hasMatch(file.readAsStringSync())))
+          file.path,
+    ];
+  }
+
+  test('timelineWriterIsTheOnlyWriter', () {
+    expect(
+      writersOf('time_entries', 'timeEntries', <String>{
+        'domain/timeline_writer.dart',
+      }),
+      isEmpty,
+      reason:
+          'SPEC §11.3: every mutation of an entry goes through '
+          'TimelineWriter, which is where §4 is checked',
+    );
+    // Sessions have their own single writer (SPEC §9.9). The timeline writer
+    // is allowed too, for exactly two operations that must be one transaction
+    // over every table: applying a backup and deleting all data (§4.6, §8.6).
+    expect(
+      writersOf('active_sessions', 'activeSessions', <String>{
+        'data/repositories/active_session_repository.dart',
+        'domain/timeline_writer.dart',
+      }),
+      isEmpty,
+      reason: 'SPEC §9.9: ActiveSessionRepository writes active_sessions',
+    );
+    // A named write query in the schema would generate a method that anything
+    // holding the database could call, past both writers.
+    final schema = File('lib/src/data/db/schema.drift').readAsStringSync();
+    expect(
+      RegExp(
+        r'^\w+:\s*(INSERT|UPDATE|DELETE)\b',
+        multiLine: true,
+        caseSensitive: false,
+      ).hasMatch(schema),
+      isFalse,
+      reason: 'schema.drift declares reads only',
+    );
+  });
+
   test('domainHasNoFlutterImports', () {
     final offenders = <String>[];
     // Everything under domain/ except the writer, rather than a list of

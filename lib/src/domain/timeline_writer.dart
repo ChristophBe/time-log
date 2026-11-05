@@ -872,6 +872,23 @@ class TimelineWriter {
     await _db.delete(_db.activeSessions).go();
   });
 
+  /// How long a deleted entry is kept as a tombstone (SPEC §5.1).
+  static const Duration tombstoneLifetime = Duration(days: 30);
+
+  /// Removes the tombstones older than [tombstoneLifetime], and returns how
+  /// many (SPEC §5.1).
+  ///
+  /// Housekeeping rather than an action: nothing live is touched, so §4 cannot
+  /// be affected and there is nothing to undo. A tombstone exists so that Undo
+  /// and a backup round trip know an entry was deleted (§8.6); a month on, the
+  /// first is long gone, and a backup that old would resurrect it either way.
+  Future<int> purgeDeleted() => _db.transaction(() async {
+    final cutoff = toMillis(_clock.nowUtc().subtract(tombstoneLifetime));
+    return (_db.delete(
+      _db.timeEntries,
+    )..where((t) => t.deletedAt.isSmallerThanValue(cutoff))).go();
+  });
+
   // ------------------------------------------------------------- activities
 
   /// Renames, or merges when the name is already taken (SPEC §6.7).

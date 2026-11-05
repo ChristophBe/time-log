@@ -7,6 +7,8 @@ import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/timeline_writer.dart';
+import 'package:time_log/src/features/export/delivery/delivery.dart';
+import 'package:time_log/src/features/export/export_providers.dart';
 import 'package:time_log/src/features/today/action_feedback.dart';
 import 'package:time_log/src/features/today/day_header.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
@@ -40,6 +42,42 @@ void main() {
 
     expect(find.text('Nothing is running'), findsOneWidget);
     expect(find.text('No entries for this day'), findsOneWidget);
+  });
+
+  testWidgets('an empty day offers Add entry for the half hour just gone', (
+    tester,
+  ) async {
+    // SPEC §8.2: the composer starts something now; this is for time that has
+    // already passed and was not logged.
+    final h = WidgetHarness(now: now);
+    when(
+      () => h.writer.insertEntry(
+        name: any(named: 'name'),
+        startUtc: any(named: 'startUtc'),
+        endUtc: any(named: 'endUtc'),
+      ),
+    ).thenAnswer((_) async => UndoToken('x', () async {}));
+    await h.pump(tester, const TodayScreen());
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Add entry'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('activity-name-field')),
+      'Email',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add entry'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => h.writer.insertEntry(
+        name: 'Email',
+        startUtc: now.subtract(const Duration(minutes: 30)),
+        endUtc: now,
+      ),
+    ).called(1);
+    expect(find.text('Added Email'), findsOneWidget);
+    expect(find.text('Undo'), findsOneWidget);
   });
 
   testWidgets('idle state offers to resume the last activity', (tester) async {
@@ -581,4 +619,85 @@ void main() {
 
     verify(() => h.writer.resume('e1')).called(1);
   });
+
+  group('a database that will not open (SPEC §9.5)', () {
+    Future<_RecordingDelivery> pumpFailing(
+      WidgetTester tester, {
+      required List<bool> fails,
+    }) async {
+      final delivery = _RecordingDelivery();
+      var attempt = 0;
+      final h = WidgetHarness(
+        now: now,
+        dayEntriesStream: () => fails[attempt++]
+            ? Stream<List<TimeEntry>>.error(StateError('disk I/O error'))
+            : Stream<List<TimeEntry>>.value(const <TimeEntry>[]),
+      );
+      await h.pump(
+        tester,
+        const TodayScreen(),
+        extraOverrides: [exportDeliveryProvider.overrideWithValue(delivery)],
+      );
+      await tester.pumpAndSettle();
+      return delivery;
+    }
+
+    testWidgets('explains itself, never an empty timeline', (tester) async {
+      await pumpFailing(tester, fails: <bool>[true]);
+
+      expect(find.text('Your time log could not be opened.'), findsOneWidget);
+      expect(find.text('No entries for this day'), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
+      expect(
+        find.widgetWithText(OutlinedButton, 'Export diagnostics'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Retry reads again', (tester) async {
+      await pumpFailing(tester, fails: <bool>[true, false]);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your time log could not be opened.'), findsNothing);
+      expect(find.text('No entries for this day'), findsOneWidget);
+    });
+
+    testWidgets('Export diagnostics hands over the error as text', (
+      tester,
+    ) async {
+      final delivery = await pumpFailing(tester, fails: <bool>[true]);
+
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, 'Export diagnostics'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(delivery.calls, 1);
+      expect(delivery.mimeType, 'text/plain');
+      expect(delivery.fileName, endsWith('.txt'));
+      expect(delivery.text, contains('disk I/O error'));
+      expect(delivery.text, contains('version'));
+    });
+  });
+}
+
+class _RecordingDelivery implements ExportDelivery {
+  String? fileName;
+  String? text;
+  String? mimeType;
+  int calls = 0;
+
+  @override
+  Future<void> send({
+    required String fileName,
+    required String text,
+    required String mimeType,
+  }) async {
+    calls++;
+    this.fileName = fileName;
+    this.text = text;
+    this.mimeType = mimeType;
+  }
 }

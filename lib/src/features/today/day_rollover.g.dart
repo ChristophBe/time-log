@@ -74,7 +74,7 @@ final class DayRolloverProvider
   }
 }
 
-String _$dayRolloverHash() => r'ea31850c182c62b131cf0df8d06f439b0faf3f55';
+String _$dayRolloverHash() => r'89763cdcc983e24ade892bbdea76c935885766c4';
 
 /// Runs SPEC §6.11 whenever the app gets a chance to notice that a midnight has
 /// passed: at launch, on resume, and on the 30-second tick (SPEC §9.3).

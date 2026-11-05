@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/timeline_writer.dart';
+import 'latest_undo.dart';
 import 'today_providers.dart';
 
 part 'day_rollover.g.dart';
@@ -38,7 +39,12 @@ class DayRollover extends _$DayRollover {
     final outcome = await ref
         .read(timelineWriterProvider)
         .rollOverRunningEntry(days: ref.read(dayWindowsProvider));
-    if (outcome.changedAnything) state = outcome.boundaries.last;
+    if (outcome.changedAnything) {
+      state = outcome.boundaries.last;
+      // The cut rewrote the running entry, so an Undo taken before it would
+      // restore an entry that no longer looks like that (SPEC §7.5).
+      ref.read(latestUndoProvider.notifier).offer(null);
+    }
     ref.read(selectedDayProvider.notifier).followNow();
   }
 }

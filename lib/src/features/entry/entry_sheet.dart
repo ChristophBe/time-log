@@ -19,6 +19,7 @@ import '../../domain/timeline/invariants.dart';
 import '../../domain/timeline/time_conflicts.dart';
 import '../../domain/timeline_writer.dart';
 import '../today/action_feedback.dart';
+import '../today/latest_undo.dart';
 import '../today/resume_action.dart';
 import '../today/today_providers.dart';
 import 'activity_picker.dart';
@@ -221,6 +222,7 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
   Future<void> _changeActivity(Activity activity) async {
     final changed = await showActivityPicker(
       context,
+      ref,
       entry: widget.entry,
       current: activity,
     );
@@ -389,6 +391,7 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
                       label: Text('Running'),
                       visualDensity: VisualDensity.compact,
                     ),
+                  const _SheetMenu(),
                 ],
               ),
               const SizedBox(height: Insets.md),
@@ -515,6 +518,38 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
 }
 
 /// The three time fields, in one container with hairlines between them.
+/// The sheet's overflow menu, which keeps the session's latest Undo on offer
+/// once its SnackBar has gone (SPEC §7.5).
+///
+/// It undoes whatever was done last, wherever that was: the one Undo there is
+/// to give, not one per entry. Disabled rather than hidden when there is none,
+/// so the menu does not appear and vanish under the finger.
+class _SheetMenu extends ConsumerWidget {
+  const _SheetMenu();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final undo = ref.watch(latestUndoProvider);
+    return MenuAnchor(
+      builder: (context, controller, _) => IconButton(
+        tooltip: 'More',
+        icon: const Icon(Icons.more_vert_rounded),
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
+      menuChildren: <Widget>[
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.undo_rounded),
+          onPressed: undo == null ? null : () => undoLatest(context, undo),
+          child: Text(
+            undo == null ? 'Nothing to undo' : 'Undo: ${undo.description}',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FieldGroup extends StatelessWidget {
   const _FieldGroup({required this.children});
 

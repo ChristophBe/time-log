@@ -22,15 +22,15 @@ Future<EntryNeighbours> entryNeighbours(Ref ref, String entryId) async {
   return repository.neighboursOf(entryId, entry.startUtc);
 }
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked for naming a span after the fact (SPEC §6.10, §8.2, §9.6).
 ///
 /// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// there, picking the running one would be a no-op; when relabelling it is the
+/// entry's current one; filling a gap excludes nothing.
 @riverpod
 Stream<List<ActivitySuggestion>> relabelSuggestions(
   Ref ref,
-  String excludeActivityId,
+  String? excludeActivityId,
   String query,
 ) => ref
     .watch(timeEntryRepositoryProvider)

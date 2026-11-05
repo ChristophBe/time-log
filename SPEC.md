@@ -1137,7 +1137,7 @@ excludes them from analysis, so nothing else would notice a stale one. Every pus
 all six platforms (§14.12); a pull request builds web and Android.
 
 **The suite needs a UTC+01:00 rendering zone.** Fixtures are UTC instants on 2026-03-10 and the UI
-renders local time (§5.3), so 18 tests fail under `TZ=UTC`. Dart takes the local zone from the
+renders local time (§5.3), so 19 tests fail under `TZ=UTC`. Dart takes the local zone from the
 process environment and nowhere else, which makes exporting `TZ` the fix and not a workaround; CI and
 the README both use `Europe/Berlin`.
 
