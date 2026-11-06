@@ -52,8 +52,9 @@ platform to Android, so the suite is the Material path by default and
 | Day calendar: hour axis, now-line, gaps, midnight splitting, DST-correct days | Desktop tray and global shortcuts |
 | Correcting a boundary by drag, by typing, or by keyboard alone | Web install / PWA polish |
 | History, grouped by day, searchable by name and note | Week view, per-activity reports (P6) |
-| JSON backup and import, with a dry run before anything changes | Projects, tags, sync (P6) |
-| Exporting a date range as CSV | |
+| JSON backup and import, with a dry run before anything changes | Tags, sync (P6) |
+| Exporting a date range as CSV, for everything or one project | |
+| Projects: grouping activities, from their own destination | |
 | Filling a gap, splitting where you choose, the long-run banner | |
 | Renaming, recolouring and merging activities | |
 | Settings: snap, clock, theme, week start, day height, continue window, long-run threshold | |

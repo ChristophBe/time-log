@@ -1,5 +1,6 @@
 import '../../domain/backup/json_backup.dart';
 import '../../domain/models/activity.dart';
+import '../../domain/models/project.dart';
 import '../../domain/models/time_entry.dart';
 import '../../domain/presence/active_session.dart';
 import 'database.dart';
@@ -12,7 +13,12 @@ extension ActivityRowMapper on ActivityRow {
     name: name,
     colorSeed: colorSeed,
     archived: archived != 0,
+    projectId: projectId,
   );
+}
+
+extension ProjectRowMapper on ProjectRow {
+  Project toDomain() => Project(id: id, name: name);
 }
 
 extension TimeEntryRowMapper on TimeEntryRow {
@@ -54,6 +60,17 @@ extension ActivityBackupMapper on ActivityRow {
     nameKey: nameKey,
     colorSeed: colorSeed,
     archived: archived != 0,
+    projectId: projectId,
+    createdAt: _utc(createdAt),
+    updatedAt: _utc(updatedAt),
+  );
+}
+
+extension ProjectBackupMapper on ProjectRow {
+  BackupProject toBackup() => BackupProject(
+    id: id,
+    name: name,
+    nameKey: nameKey,
     createdAt: _utc(createdAt),
     updatedAt: _utc(updatedAt),
   );

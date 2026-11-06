@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/activity.dart';
 import '../models/app_settings.dart';
 import '../models/time_entry.dart';
 import '../presence/active_session.dart';
@@ -12,7 +13,10 @@ import '../timeline/invariants.dart';
 /// by later versions of the app.
 ///
 /// v2 adds `activeSessions` (SPEC §9.9); a v1 file simply has none.
-const int backupFormatVersion = 2;
+///
+/// v3 adds `projects` and an activity's `projectId` (SPEC §6.12); an older
+/// file has no projects and every activity is in none.
+const int backupFormatVersion = 3;
 
 /// One stored entry, with the bookkeeping columns the domain model leaves out.
 ///
@@ -89,6 +93,7 @@ class BackupActivity {
     required this.archived,
     required this.createdAt,
     required this.updatedAt,
+    this.projectId,
   });
 
   final String id;
@@ -96,6 +101,7 @@ class BackupActivity {
   final String nameKey;
   final int colorSeed;
   final bool archived;
+  final String? projectId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -105,6 +111,7 @@ class BackupActivity {
     'nameKey': nameKey,
     'colorSeed': colorSeed,
     'archived': archived,
+    'projectId': projectId,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'updatedAt': updatedAt.toUtc().toIso8601String(),
   };
@@ -115,6 +122,41 @@ class BackupActivity {
     nameKey: json['nameKey'] as String? ?? _string(json, 'name'),
     colorSeed: (json['colorSeed'] as num?)?.toInt() ?? 0,
     archived: json['archived'] == true,
+    projectId: json['projectId'] as String?,
+    createdAt: _instant(json, 'createdAt') ?? DateTime.utc(2000),
+    updatedAt: _instant(json, 'updatedAt') ?? DateTime.utc(2000),
+  );
+}
+
+/// One stored project, with its bookkeeping (SPEC §6.12).
+class BackupProject {
+  const BackupProject({
+    required this.id,
+    required this.name,
+    required this.nameKey,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String nameKey;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'name': name,
+    'nameKey': nameKey,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+  };
+
+  static BackupProject fromJson(Map<String, Object?> json) => BackupProject(
+    id: _string(json, 'id'),
+    name: _string(json, 'name'),
+    nameKey:
+        json['nameKey'] as String? ?? Activity.keyFor(_string(json, 'name')),
     createdAt: _instant(json, 'createdAt') ?? DateTime.utc(2000),
     updatedAt: _instant(json, 'updatedAt') ?? DateTime.utc(2000),
   );
@@ -168,10 +210,12 @@ class BackupFile {
     required this.entries,
     required this.settings,
     this.sessions = const <BackupSession>[],
+    this.projects = const <BackupProject>[],
   });
 
   final int formatVersion;
   final DateTime exportedAt;
+  final List<BackupProject> projects;
   final List<BackupActivity> activities;
   final List<BackupEntry> entries;
   final List<BackupSession> sessions;
@@ -185,6 +229,7 @@ String encodeBackup({
   required AppSettings settings,
   required DateTime exportedAt,
   Iterable<BackupSession> sessions = const <BackupSession>[],
+  Iterable<BackupProject> projects = const <BackupProject>[],
 }) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
   'formatVersion': backupFormatVersion,
   'exportedAt': exportedAt.toUtc().toIso8601String(),
@@ -197,6 +242,7 @@ String encodeBackup({
     'firstDayOfWeek': settings.firstDayOfWeek,
     'longRunMinutes': settings.longRun.inMinutes,
   },
+  'projects': <Object?>[for (final p in projects) p.toJson()],
   'activities': <Object?>[for (final a in activities) a.toJson()],
   'entries': <Object?>[for (final e in entries) e.toJson()],
   'activeSessions': <Object?>[for (final s in sessions) s.toJson()],
@@ -249,6 +295,10 @@ BackupRead parseBackup(String text) {
       BackupFile(
         formatVersion: version,
         exportedAt: _instant(decoded, 'exportedAt') ?? DateTime.utc(2000),
+        projects: <BackupProject>[
+          for (final p in (decoded['projects'] as List<Object?>? ?? const []))
+            BackupProject.fromJson(p! as Map<String, Object?>),
+        ],
         activities: <BackupActivity>[
           for (final a in (decoded['activities'] as List<Object?>? ?? const []))
             BackupActivity.fromJson(a! as Map<String, Object?>),
@@ -297,6 +347,7 @@ class BackupPlan {
     required this.added,
     required this.updated,
     required this.skipped,
+    this.projectsToWrite = const <BackupProject>[],
     this.sessionsToWrite = const <BackupSession>[],
     this.sessionsAdded = 0,
     this.rejection,
@@ -306,6 +357,7 @@ class BackupPlan {
 
   /// The rows to write if this plan is applied, already merged.
   final List<BackupEntry> entriesToWrite;
+  final List<BackupProject> projectsToWrite;
   final List<BackupActivity> activitiesToWrite;
   final List<BackupSession> sessionsToWrite;
 
@@ -337,6 +389,7 @@ BackupPlan planMerge({
   required List<BackupActivity> existingActivities,
   required DateTime now,
   List<BackupSession> existingSessions = const <BackupSession>[],
+  List<BackupProject> existingProjects = const <BackupProject>[],
 }) {
   final merged = <String, BackupEntry>{
     for (final entry in existingEntries) entry.id: entry,
@@ -368,6 +421,16 @@ BackupPlan planMerge({
     }
   }
 
+  final mergedProjects = <String, BackupProject>{
+    for (final project in existingProjects) project.id: project,
+  };
+  for (final project in incoming.projects) {
+    final existing = mergedProjects[project.id];
+    if (existing == null || project.updatedAt.isAfter(existing.updatedAt)) {
+      mergedProjects[project.id] = project;
+    }
+  }
+
   final live = <TimeEntry>[
     for (final entry in merged.values)
       if (!entry.isDeleted) entry.toTimeEntry(),
@@ -395,6 +458,17 @@ BackupPlan planMerge({
         );
       }
     }
+    // And every activity to a project that will exist, or to none.
+    for (final activity in mergedActivities.values) {
+      final projectId = activity.projectId;
+      if (projectId != null && !mergedProjects.containsKey(projectId)) {
+        throw InvariantViolation(
+          'Missing project',
+          'Activity ${activity.id} refers to project $projectId, which is '
+              'not in the file or the database.',
+        );
+      }
+    }
   } on InvariantViolation catch (violation) {
     rejection = violation.detail;
   }
@@ -407,6 +481,7 @@ BackupPlan planMerge({
   return BackupPlan(
     file: incoming,
     entriesToWrite: merged.values.toList(),
+    projectsToWrite: mergedProjects.values.toList(),
     activitiesToWrite: mergedActivities.values.toList(),
     sessionsToWrite: sessions,
     sessionsAdded: sessions.length - existingSessions.length,

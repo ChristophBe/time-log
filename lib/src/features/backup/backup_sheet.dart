@@ -27,6 +27,7 @@ Future<void> exportEverything(BuildContext context, WidgetRef ref) async {
   final settings = ref.read(appSettingsProvider).value ?? const AppSettings();
   final now = ref.read(appClockProvider).nowUtc();
   final text = encodeBackup(
+    projects: data.projects,
     activities: data.activities,
     entries: data.entries,
     sessions: sessions,
@@ -68,6 +69,7 @@ Future<void> startImport(BuildContext context, WidgetRef ref) async {
     incoming: (read as BackupReadOk).file,
     existingEntries: existing.entries,
     existingActivities: existing.activities,
+    existingProjects: existing.projects,
     existingSessions: existingSessions,
     now: ref.read(appClockProvider).nowUtc(),
   );

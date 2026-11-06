@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:time_log/src/domain/models/activity.dart';
+import 'package:time_log/src/domain/models/project.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/features/export/delivery/delivery.dart';
 import 'package:time_log/src/features/export/export_providers.dart';
@@ -62,10 +63,13 @@ void main() {
     WidgetTester tester,
     Widget child, {
     List<TimeEntry> entries = const <TimeEntry>[],
+    Map<String, Activity> activities = const <String, Activity>{'a1': specs},
+    Map<String, Project> projects = const <String, Project>{},
   }) async {
     harness = WidgetHarness(
       now: now,
-      activities: <String, Activity>{'a1': specs},
+      activities: activities,
+      projects: projects,
       entries: entries,
     );
     repository = harness.entryRepository;
@@ -93,6 +97,8 @@ void main() {
   Future<void> pumpSheet(
     WidgetTester tester, {
     List<TimeEntry> entries = const <TimeEntry>[],
+    Map<String, Activity> activities = const <String, Activity>{'a1': specs},
+    Map<String, Project> projects = const <String, Project>{},
   }) async {
     await pumpWith(
       tester,
@@ -105,6 +111,8 @@ void main() {
         ),
       ),
       entries: entries,
+      activities: activities,
+      projects: projects,
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
@@ -191,6 +199,94 @@ void main() {
     expect(delivery.fileName, 'time-log-2026-03-08_2026-03-11.csv');
     expect(delivery.text, contains('Writing specs'));
     expect(find.textContaining('Exported 1 entries'), findsOneWidget);
+  });
+
+  group('by project (SPEC §8.6)', () {
+    const clientA = Project(id: 'p1', name: 'Client A');
+    const email = Activity(id: 'a2', name: 'Email', colorSeed: 1);
+    final filed = <String, Activity>{
+      'a1': specs.withProject('p1'),
+      'a2': email,
+    };
+    final twoEntries = <TimeEntry>[
+      entry(
+        id: 'e1',
+        start: DateTime.utc(2026, 3, 10, 9),
+        end: DateTime.utc(2026, 3, 10, 10),
+      ),
+      TimeEntry(
+        id: 'e2',
+        activityId: 'a2',
+        startUtc: DateTime.utc(2026, 3, 10, 10),
+        endUtc: DateTime.utc(2026, 3, 10, 10, 30),
+        tzName: 'Europe/Berlin',
+      ),
+    ];
+
+    Future<void> pumpFiled(WidgetTester tester) => pumpSheet(
+      tester,
+      entries: twoEntries,
+      activities: filed,
+      projects: const <String, Project>{'p1': clientA},
+    );
+
+    testWidgets('there is no project choice until a project exists', (
+      tester,
+    ) async {
+      await pumpSheet(tester, entries: twoEntries);
+
+      expect(find.text('Project'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'No project'), findsNothing);
+    });
+
+    testWidgets('All is chosen to begin with, and counts everything', (
+      tester,
+    ) async {
+      await pumpFiled(tester);
+
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'All'))
+            .selected,
+        isTrue,
+      );
+      expect(find.textContaining('2 entries'), findsOneWidget);
+    });
+
+    testWidgets('picking a project narrows the summary and names the file', (
+      tester,
+    ) async {
+      await pumpFiled(tester);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Client A'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('1 entry'), findsOneWidget);
+      expect(find.textContaining('1 h'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Export CSV'));
+      await tester.pumpAndSettle();
+
+      expect(delivery.fileName, 'time-log-client-a-2026-03-08_2026-03-11.csv');
+      expect(delivery.text, contains('Writing specs,Client A,'));
+      expect(delivery.text, isNot(contains('Email')));
+    });
+
+    testWidgets('No project exports what is in none', (tester) async {
+      await pumpFiled(tester);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'No project'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Export CSV'));
+      await tester.pumpAndSettle();
+
+      expect(
+        delivery.fileName,
+        'time-log-no-project-2026-03-08_2026-03-11.csv',
+      );
+      expect(delivery.text, contains('Email'));
+      expect(delivery.text, isNot(contains('Writing specs')));
+    });
   });
 
   testWidgets('it is reachable from Settings', (tester) async {

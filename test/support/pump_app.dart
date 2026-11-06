@@ -10,6 +10,7 @@ import 'package:time_log/src/data/repositories/settings_repository.dart';
 import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
+import 'package:time_log/src/domain/models/project.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/domain/presence/active_session.dart';
 import 'package:time_log/src/domain/timeline/day_window.dart';
@@ -46,6 +47,7 @@ class WidgetHarness {
     this.running,
     this.entries = const <TimeEntry>[],
     this.activities = const <String, Activity>{},
+    this.projects = const <String, Project>{},
     this.suggestions = const <ActivitySuggestion>[],
     this.lastFinished,
     this.dayWindows,
@@ -62,6 +64,9 @@ class WidgetHarness {
   final TimeEntry? running;
   final List<TimeEntry> entries;
   final Map<String, Activity> activities;
+
+  /// Projects, by id (SPEC §6.12). None unless a test gives some.
+  final Map<String, Project> projects;
   final List<ActivitySuggestion> suggestions;
   final TimeEntry? lastFinished;
 
@@ -122,6 +127,8 @@ class WidgetHarness {
         .thenAnswer((_) => Stream<List<TimeEntry>>.value(entries));
     when(() => entryRepository.watchActivitiesById())
         .thenAnswer((_) => Stream<Map<String, Activity>>.value(activities));
+    when(() => entryRepository.watchProjectsById())
+        .thenAnswer((_) => Stream<Map<String, Project>>.value(projects));
     when(() => sessionRepository.readForBackup()).thenAnswer((_) async => []);
     when(() => sessionRepository.deleteAll()).thenAnswer((_) async {});
     await tester.binding.setSurfaceSize(surfaceSize);
@@ -154,6 +161,9 @@ class WidgetHarness {
           ),
           activitiesByIdProvider.overrideWith(
             (ref) => Stream<Map<String, Activity>>.value(activities),
+          ),
+          projectsByIdProvider.overrideWith(
+            (ref) => Stream<Map<String, Project>>.value(projects),
           ),
           lastFinishedEntryProvider.overrideWith((ref) async => lastFinished),
           runStartUtcProvider.overrideWith(

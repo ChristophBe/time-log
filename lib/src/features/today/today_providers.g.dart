@@ -193,6 +193,52 @@ final class ActivitiesByIdProvider
 
 String _$activitiesByIdHash() => r'3e12151a6067017c919f9b98fd434429ace89faa';
 
+/// Every project, by id (SPEC §6.12).
+
+@ProviderFor(projectsById)
+final projectsByIdProvider = ProjectsByIdProvider._();
+
+/// Every project, by id (SPEC §6.12).
+
+final class ProjectsByIdProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<Map<String, Project>>,
+          Map<String, Project>,
+          Stream<Map<String, Project>>
+        >
+    with
+        $FutureModifier<Map<String, Project>>,
+        $StreamProvider<Map<String, Project>> {
+  /// Every project, by id (SPEC §6.12).
+  ProjectsByIdProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'projectsByIdProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$projectsByIdHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<Map<String, Project>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<Map<String, Project>> create(Ref ref) {
+    return projectsById(ref);
+  }
+}
+
+String _$projectsByIdHash() => r'ed099c00b85e52ff74174d57213a252af4b5962b';
+
 /// Entries touching the selected day, oldest first. An entry crossing midnight
 /// appears here for both days it touches (SPEC §5.3).
 
