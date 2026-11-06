@@ -24,6 +24,7 @@ import '../entry/neighbour_prompt.dart';
 import '../presence/active_rail.dart';
 import '../today/action_feedback.dart';
 import '../today/resume_action.dart';
+import '../today/start_action.dart';
 import '../today/today_providers.dart';
 import 'calendar_metrics.dart';
 import 'calendar_providers.dart';
@@ -264,7 +265,13 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
     try {
       final undo = await ref
           .read(timelineWriterProvider)
-          .insertEntry(name: name, startUtc: startUtc, endUtc: endUtc);
+          .insertEntry(
+            name: name,
+            startUtc: startUtc,
+            endUtc: endUtc,
+            // The latest project, as Start would use (SPEC §6.12).
+            projectId: defaultProjectFromRef(ref, name),
+          );
       if (!mounted) return;
       showUndoableFeedback(context, message: 'Added $name', undo: undo);
     } on InvariantViolation catch (error) {

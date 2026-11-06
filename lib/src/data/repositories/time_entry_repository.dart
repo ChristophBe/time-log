@@ -58,6 +58,27 @@ class TimeEntryRepository {
         },
       );
 
+  /// Each activity's most recent project, null included, for the composer's
+  /// default (SPEC §6.12). Only activities with an entry appear.
+  Stream<Map<String, String?>> watchLatestProjectByActivity() =>
+      _db.latestProjectByActivity().watch().map(
+        (rows) => <String, String?>{
+          for (final row in rows) row.activityId: row.projectId,
+        },
+      );
+
+  /// The activities each project has been logged under (SPEC §8.7).
+  Stream<Map<String, Set<String>>> watchProjectActivityIds() =>
+      _db.projectActivityPairs().watch().map((rows) {
+        final byProject = <String, Set<String>>{};
+        for (final row in rows) {
+          byProject
+              .putIfAbsent(row.projectId!, () => <String>{})
+              .add(row.activityId);
+        }
+        return byProject;
+      });
+
   Future<TimeEntry?> findEntry(String id) async {
     final row = await (_db.select(
       _db.timeEntries,

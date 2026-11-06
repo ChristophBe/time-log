@@ -179,10 +179,10 @@ void main() {
     expect(await v2.select(v2.activeSessions).get(), isEmpty);
   });
 
-  test('a v1 database arrives with every activity in no project', () async {
-    final activities = await db.select(db.activities).get();
+  test('a v1 database arrives with every entry in no project', () async {
+    final entries = await db.select(db.timeEntries).get();
 
-    expect(activities.single.projectId, isNull, reason: 'SPEC §6.12');
+    expect(entries.map((e) => e.projectId), everyElement(isNull));
     expect(await db.select(db.projects).get(), isEmpty);
   });
 
@@ -208,27 +208,30 @@ void main() {
       'PRAGMA user_version = 3',
       'INSERT INTO activities VALUES '
           "('a1', 'Writing specs', 'writing specs', 0, 0, 1000, 1000)",
+      'INSERT INTO time_entries (id, activity_id, start_utc, end_utc, '
+          'tz_name, created_at, updated_at) VALUES '
+          "('e1', 'a1', 1000000, 4600000, 'Europe/Berlin', 1000, 1000)",
     ]) {
       sqlite.execute(statement);
     }
     final v3 = AppDatabase(NativeDatabase.opened(sqlite));
     addTearDown(v3.close);
 
-    expect((await v3.select(v3.activities).getSingle()).projectId, isNull);
+    expect((await v3.select(v3.timeEntries).getSingle()).projectId, isNull);
 
     await v3.customStatement(
       'INSERT INTO projects VALUES '
       "('p1', 'Client A', 'client a', 1000, 1000)",
     );
     await v3.customStatement(
-      "UPDATE activities SET project_id = 'p1' WHERE id = 'a1'",
+      "UPDATE time_entries SET project_id = 'p1' WHERE id = 'e1'",
     );
-    expect((await v3.select(v3.activities).getSingle()).projectId, 'p1');
+    expect((await v3.select(v3.timeEntries).getSingle()).projectId, 'p1');
 
     // The column is a real foreign key, not just a string.
     await expectLater(
       v3.customStatement(
-        "UPDATE activities SET project_id = 'nowhere' WHERE id = 'a1'",
+        "UPDATE time_entries SET project_id = 'nowhere' WHERE id = 'e1'",
       ),
       throwsA(anything),
     );

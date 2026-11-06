@@ -59,7 +59,7 @@ class AppDatabase extends _$AppDatabase {
   /// v2 -> v3 adds active sessions and the setting that turns them on, which
   /// stays off for anyone upgrading (SPEC §9.9).
   ///
-  /// v3 -> v4 adds projects, and every existing activity arrives in none
+  /// v3 -> v4 adds projects, and every existing entry arrives in none
   /// (SPEC §6.12).
   ///
   /// Written as explicit column additions rather than a table rebuild so that
@@ -81,7 +81,7 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.createTable(projects);
-        await m.addColumn(activities, activities.projectId);
+        await m.addColumn(timeEntries, timeEntries.projectId);
       }
     },
     beforeOpen: (details) async {

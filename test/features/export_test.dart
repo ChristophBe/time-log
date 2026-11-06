@@ -204,16 +204,14 @@ void main() {
   group('by project (SPEC §8.6)', () {
     const clientA = Project(id: 'p1', name: 'Client A');
     const email = Activity(id: 'a2', name: 'Email', colorSeed: 1);
-    final filed = <String, Activity>{
-      'a1': specs.withProject('p1'),
-      'a2': email,
-    };
+    final filed = <String, Activity>{'a1': specs, 'a2': email};
+    // The first entry is in Client A, the second in no project.
     final twoEntries = <TimeEntry>[
       entry(
         id: 'e1',
         start: DateTime.utc(2026, 3, 10, 9),
         end: DateTime.utc(2026, 3, 10, 10),
-      ),
+      ).withProject('p1'),
       TimeEntry(
         id: 'e2',
         activityId: 'a2',

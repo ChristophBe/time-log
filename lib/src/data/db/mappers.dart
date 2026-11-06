@@ -13,7 +13,6 @@ extension ActivityRowMapper on ActivityRow {
     name: name,
     colorSeed: colorSeed,
     archived: archived != 0,
-    projectId: projectId,
   );
 }
 
@@ -29,6 +28,7 @@ extension TimeEntryRowMapper on TimeEntryRow {
     endUtc: endUtc == null ? null : _utc(endUtc!),
     tzName: tzName,
     note: note,
+    projectId: projectId,
   );
 }
 
@@ -60,7 +60,6 @@ extension ActivityBackupMapper on ActivityRow {
     nameKey: nameKey,
     colorSeed: colorSeed,
     archived: archived != 0,
-    projectId: projectId,
     createdAt: _utc(createdAt),
     updatedAt: _utc(updatedAt),
   );
@@ -95,5 +94,6 @@ extension TimeEntryBackupMapper on TimeEntryRow {
     createdAt: _utc(createdAt),
     updatedAt: _utc(updatedAt),
     deletedAt: deletedAt == null ? null : _utc(deletedAt!),
+    projectId: projectId,
   );
 }

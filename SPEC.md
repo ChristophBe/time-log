@@ -70,7 +70,7 @@ length"**. Everything else can cost a tap more.
 | Term | Meaning |
 | --- | --- |
 | **Activity** | A named kind of work ("Writing specs"). Identified by its normalised name. Carries a stable colour. |
-| **Project** | A named group of activities ("Client A"). An activity belongs to at most one. Used to read and export the time of several activities together (§6.12, §8.7). |
+| **Project** | What a span of time was for ("Client A"). Set on each entry, so the same activity can be logged under several projects. Used to read and export that time together (§6.12, §8.7). |
 | **Entry** | One continuous span of doing an activity: `activityId`, optional note, `startAt`, `endAt`. |
 | **Running entry** | The entry with `endAt == null`. At most one exists. Its end is "now". |
 | **Gap** | Time between two entries that no entry covers. Legal, and means "untracked". |
@@ -123,10 +123,9 @@ applies to all history at once.
 | `nameKey` | string | Unique. `name` trimmed, whitespace-collapsed, lowercased (Unicode-aware). Matching key for "is this the same activity?". |
 | `colorSeed` | int | Index into the palette (§9.7). Assigned on creation from the least-used palette slot; user-editable. |
 | `archived` | bool | Hidden from suggestions, kept in history. |
-| `projectId` | fk → Project? | `null` ⇒ no project. On the activity rather than the entry, so moving an activity re-files its whole history (§6.12). |
 | `createdAt` / `updatedAt` | utc millis | |
 
-**Project** — a named group of activities (§6.12).
+**Project** — what a span of time was for (§6.12).
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -142,6 +141,7 @@ applies to all history at once.
 | `id` | uuid v4 string | |
 | `activityId` | fk → Activity | |
 | `note` | string? | Free text, ≤ 2000 chars. What distinguishes two spans of the same activity. |
+| `projectId` | fk → Project? | `null` ⇒ no project. On the entry rather than the activity, so one activity can be logged under several projects (§6.12). |
 | `startUtc` | utc millis | |
 | `endUtc` | utc millis? | `null` ⇒ running. |
 | `tzName` | string | IANA zone captured at creation, e.g. `Europe/Berlin`. See §5.3. |
@@ -181,9 +181,7 @@ CREATE TABLE activities (
   color_seed INTEGER NOT NULL,
   archived   INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  -- Added in schema v4; NULL is "no project".
-  project_id TEXT    REFERENCES projects(id)
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE time_entries (
@@ -196,6 +194,8 @@ CREATE TABLE time_entries (
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   deleted_at  INTEGER,
+  -- Added in schema v4; NULL is "no project".
+  project_id  TEXT    REFERENCES projects(id),
   -- 1 only while this row is the live running entry, NULL otherwise.
   is_running  INTEGER GENERATED ALWAYS AS (
                 CASE WHEN end_utc IS NULL AND deleted_at IS NULL THEN 1 END) VIRTUAL,
@@ -269,7 +269,7 @@ semantics announcement (§10.4) plus — where destructive — an 8-second undo.
 
 ### 6.1 Start
 
-Input: activity name (new or existing) + optional note. `startAt = now`.
+Input: activity name (new or existing) + optional note + optional project (§6.12). `startAt = now`.
 
 1. Resolve or create the activity by `nameKey`.
 2. If an entry is running, set its `endUtc = now` — the same instant used as the new entry's start
@@ -277,8 +277,9 @@ Input: activity name (new or existing) + optional note. `startAt = now`.
 3. Insert the new running entry.
 
 Edge cases:
-- Starting the activity that is *already* running is a no-op with a "already running" message; it
-  does not split the entry.
+- Starting the activity that is *already* running, with the same note and the same project, is a
+  no-op with a "already running" message; it does not split the entry. The same activity in a
+  **different project** is different work, and switches like a different activity would.
 - If the running entry would be left shorter than 1 minute by the handover, the handover instead
   **replaces** it: the <1-minute entry is deleted and the new one takes its start time. Rationale:
   a mistaken start corrected three seconds later should not litter the timeline. Undo restores both.
@@ -297,7 +298,7 @@ discard.
 ### 6.3 Resume
 
 From any entry (its sheet, its long-press menu, a history row): **start a new entry** with the same
-activity and note, beginning now. The source entry is not modified. This is the primary way to pick
+activity, note and project, beginning now. The source entry is not modified. This is the primary way to pick
 work back up, and it is deliberately a copy, not an edit — history keeps both spans.
 
 ### 6.4 Continue (extend instead of duplicate)
@@ -412,24 +413,36 @@ Edge cases:
 
 ### 6.12 Projects
 
-A project groups activities so their time can be read and exported together — "everything for
-Client A this month". It belongs to the **activity**, not the entry: an activity is in at most one
-project, and every entry of that activity is in it too. That keeps logging exactly as cheap as it was
-(§1) — starting something never asks for a project — and it means a project is decided once per kind
-of work rather than once per span.
+A project is what a span of time was for — "everything for Client A this month". It belongs to the
+**entry**, not the activity: the same kind of work is often done for several clients, and tying an
+activity to one project would force a second, near-identical activity name per client. An entry is
+in at most one project. Split (§6.6), day rollover (§6.11) and relabelling (§6.10) keep the entry's
+project; Resume copies it (§6.3).
 
-Four actions, each one transaction with one undo token:
+Choosing one costs nothing extra when starting: Start **suggests the latest project** and never asks.
 
+- For a name that is an existing activity, the default is the project of **that activity's most
+  recent entry**, so picking "Email" again files it where Email last went.
+- For a new name, or nothing typed yet, it is the project of the **most recent entry of all**,
+  running or last finished, since a switch is most often to other work for the same client.
+- A choice made in the composer's chip wins over the default until that start, and the chip
+  then returns to the default.
+- A project that has since been deleted is no project.
+
+Five actions, each one transaction with one undo token:
+
+- **Start in a project** — §6.1 with a `projectId`. A wrong project corrected within a minute is a
+  mis-start, and is replaced like one (§6.1).
 - **Create.** The name is resolved by `nameKey`, as an activity's is (§5.1), so creating a name that
   exists returns that project and nothing is written or offered for undo.
 - **Rename.** Renaming to a `nameKey` another project already has is **refused**, naming the other
-  project. Projects are not merged: unlike activities (§6.7), a merge would silently move every
-  activity of one project into another, and a project list is short enough to do that by hand.
-- **Delete.** The project's activities go back to having no project; no entry is touched and no
-  activity is deleted. Undo restores the project and every assignment the delete removed.
-- **Set an activity's project** (or clear it). This is **retroactive** by construction, like §6.7's
-  rename: moving an activity re-files its whole history. Picking the project it already has is a
-  no-op: nothing is written and no undo is offered.
+  project. Projects are not merged: a merge would silently move every entry of one project into
+  another, and a project list is short enough to do that by hand.
+- **Delete.** The project's entries go back to having no project; no entry is deleted and no instant
+  moves. Undo restores the project and every entry the delete cleared.
+- **Set an entry's project** (or clear it). Only that entry: the activity's other entries keep
+  theirs, so this is **not** retroactive. Picking the project it already has is a no-op: nothing is
+  written and no undo is offered.
 
 None of these touches an instant or the running slot, so like §6.9 and §6.10 they re-check no §4
 invariant.
@@ -528,7 +541,10 @@ tells you nothing, and the date is the real title of this screen.
     runs it reads "Nothing is running" plus **Resume *last activity***; when the clock has jumped
     it carries the §9.2 explanation. **All three states are the same height**, so the header does
     not resize under your finger the instant you start or stop something. Past about 140 % text
-    scale the band stacks instead of ellipsizing every part of itself.
+    scale the band stacks instead of ellipsizing every part of itself. Once a project exists, the
+    second line also names the running entry's project (or "No project"), and the whole title is a
+    tap target that opens the project menu (§6.12), changing the running entry only. The title rather
+    than the few characters of the name, so the target is full size without making the band taller.
 - **Start composer**, docked to the bottom edge and on screen at all times (§8.3): a text field and
   a **Start** button. There is no FAB and no sheet. The app has one primary verb, so the control
   that performs it sits in the open rather than behind a button that opens a modal containing it,
@@ -635,6 +651,11 @@ two-tap path depended on. A permanent input costs nothing when it is ignored.
 - No "Create **Deep work**" row either: pressing **Start** on a name that matches nothing creates
   it, so creation is still never a mode. The row was a modal-era affordance for a sheet that had no
   button of its own.
+- **Project chip**, between the field and **Start**, once at least one project exists: it shows the
+  project Start will use — the latest one, following the highlighted row or what is typed (§6.12)
+  — and opens the project menu (No project, then each project). It is a suggestion, not a question:
+  pressing **Start** without touching it is still one tap. Without projects it is not shown and the
+  composer is exactly a field and a button.
 - Keyboard: Enter starts the highlighted row, or what is typed. `Escape` clears the field and hands
   focus back to the day. `Cmd/Ctrl+N` focuses the field. The composer swallows the day-view keys
   (`T`, `←`, `→`) while it has focus, so typing a "t" does not jump to today and the arrows move the
@@ -654,6 +675,8 @@ Opened by tapping any block or history row. Contents, in order:
    then stays open showing the new activity, and **Save** still applies.
    The note commits when the field lets go rather than through **Save**, so one note change is one
    undo step (§7.5) and is never bundled with a time change. Enter inserts a line; a note is prose.
+   Under the note, once a project exists, the **project chip** (§8.3) sets this entry's project
+   (§6.12) and, like the note, commits on its own as its own undo step.
 2. **Start**, **End**, **Duration** — one group with hairlines between the rows, not three loose
    rows, because they are three views of the same two instants: editing any two updates the
    third (editing duration moves `endAt`, or `startAt` for a boundary pinned by §7). Each has a
@@ -686,8 +709,8 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
   are for the filtered file, and the file name carries the project
   (`time-log-client-a-2026-03-01_2026-03-31.csv`, or `time-log-no-project-…`) so two exports of the
   same range for different projects never collide. With no projects the row is not shown and the
-  sheet is exactly as it was. The `project` column is filled whatever the filter, and is empty for an
-  activity with no project.
+  sheet is exactly as it was. The `project` column is the entry's project whatever the filter, and is
+  empty for an entry in none; one activity can appear under several projects.
 
   Three rules make the file trustworthy, and each has a test:
   - **Rows are clipped to the range.** An entry that began the evening before is reported starting
@@ -701,10 +724,10 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
     RFC 4180 quoting, CRLF, and a UTF-8 BOM so Excel reads a non-ASCII activity name correctly.
     None of it follows the 12/24-hour display setting.
 
-- **Export everything** (P4): JSON at full fidelity — `schemaVersion`, projects, activities (with
-  their `projectId`), entries, settings — which is the backup half of this and a different job from
-  the extract above: it has to round-trip through import (§14.10), so it cannot be a slice. Format 3
-  added projects; a file from before then imports with every activity in no project.
+- **Export everything** (P4): JSON at full fidelity — `schemaVersion`, projects, activities,
+  entries (with their `projectId`), settings — which is the backup half of this and a different job
+  from the extract above: it has to round-trip through import (§14.10), so it cannot be a slice.
+  Format 3 added projects; a file from before then imports with every entry in no project.
 - **Import** (built): JSON only. Merge by `id`, newest `updatedAt` wins; shows a dry-run summary
   (added / updated / skipped / rejected) before applying, and rejects any file that would break §4,
   naming the first offending pair. Two details worth stating because they are where this goes wrong:
@@ -712,7 +735,8 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
   that is consistent with itself can still overlap what is already here — and the whole import is
   one transaction, so a rejected file changes nothing (§4.6). Tombstones are carried in the file and
   restored, or a round trip would resurrect everything ever deleted. Projects merge the same way, and
-  a file is rejected if an activity would point at a project neither it nor the database has.
+  a file is rejected if an entry — a tombstone included, since it is still a row — would point at a
+  project neither it nor the database has.
 - **Active time** (§9.9): **Track time at this computer**, off by default, with what it records and
   what it does to the app stated beside the switch rather than behind it, then the login item's
   status and **Delete active-time history**. On a platform without it, the switch is disabled and
@@ -722,20 +746,18 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
 
 ### 8.7 Projects
 
-The place projects are made and their activities seen (§6.12).
+The place projects are made, and where their time went (§6.12).
 
-- A list of projects, alphabetical, each a header (name and **⋯** for its sheet) over its
-  activities, one row each with the activity's colour dot, as in History (§8.5). **No project** comes last and holds
-  every activity not in one, so every activity is reachable from here.
+- A list of projects, alphabetical, each a header (name and **⋯** for its sheet) over the
+  activities logged under it, one row each with the activity's colour dot, as in History (§8.5).
+  The rows are a summary, not a membership: an activity appears under every project it has time in,
+  and a project with none says "Nothing logged yet". An entry's project is chosen when it is started
+  (§8.3), from the running band (§8.1) or on the entry (§8.4), never here.
 - **New project** — a FAB on a phone, a button in the header from the rail breakpoint — asks for a
   name. An existing name is not an error; it is the existing project (§6.12).
 - A project's sheet: the name, editable, with **Save**; and **Delete** demoted and in the error
-  colour, with a line saying what happens to its activities. Both undoable.
-- Tapping an activity opens the activity editor (§6.7), which carries a **Project** picker — No
-  project and each project — under the colour. That picker is the one place a project is chosen, and
-  it is reachable from here and from the entry sheet's activity picker (§8.4).
+  colour, with a line saying what happens to its entries. Both undoable.
 - Empty state: one sentence on what projects are for, and **New project**.
-- Archived activities are not listed.
 
 ---
 
@@ -1153,11 +1175,15 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 **Unit — splitting (§6.6).** `splitReturnsTheSecondHalf`.
 
 **Unit — projects (§6.12, §8.6).** `createProjectResolvesAnExistingNameKey` ·
-`renamingAProjectToATakenNameIsRefused` · `deletingAProjectUnassignsItsActivitiesAndKeepsTheirEntries` ·
-`deletingAProjectIsUndoable` · `settingAnActivitysProjectIsUndoable` ·
-`settingTheSameProjectChangesNothing` · `projectColumnFollowsActivity` ·
-`filterByProjectKeepsOnlyItsEntries` · `noProjectFilterKeepsOnlyUnassigned` ·
-`filteredTotalSumsOnlyKeptRows`.
+`renamingAProjectToATakenNameIsRefused` · `startWithAProjectStoresItOnTheEntry` ·
+`oneActivityCanBeLoggedUnderTwoProjects` · `startingTheRunningActivityInAnotherProjectSwitches` ·
+`aWrongProjectCorrectedAtOnceReplacesTheMisstart` · `theSameActivityNoteAndProjectIsAlreadyRunning` ·
+`resumeAndSplitKeepTheProject` · `rollOverKeepsTheProject` · `settingAnEntrysProjectIsUndoable` ·
+`settingTheSameProjectChangesNothing` · `deletingAProjectClearsItsEntriesAndKeepsThem` ·
+`deletingAProjectIsUndoable` · `projectColumnFollowsActivity` · `filterByProjectKeepsOnlyItsEntries` ·
+`noProjectFilterKeepsOnlyUnassigned` · `filteredTotalSumsOnlyKeptRows`. The default project (§6.12)
+is a pure function with its own tests: an activity's latest project, else the latest of all, a
+deleted project counting as none.
 
 **Unit — boundary math (§7).** `draggingSharedBoundaryConservesTotalTrackedTime` ·
 `draggingFreeEdgeGrowsIntoGapOnly` · `clampStopsAtNeighbourMinusMinimum` ·
@@ -1235,7 +1261,7 @@ the README both use `Europe/Berlin`.
 | **P4.1 Day rollover** | Stop and restart the running entry at midnight (§6.11), the catch-up pass at launch / resume / tick (§9.3) — the app's first lifecycle hook — the day view following midnight (§8.2), and the long-run threshold measured over the whole run (§8.1). | Rollover tests green; a clock left running overnight comes back as one entry per day with the 8 h banner still able to fire. |
 | **P4.2 CI** | GitHub Actions: §12's gates on every pull request, all six platform builds and the integration suite on every push to `main` (§14.12), and a `v*` tag cutting a release — the macOS artefact through `tool/release_macos.sh` so there is one definition of a release build. | Workflows green on `main`, including the first execution of the integration suite. |
 | **P4a Active time** | §9.9 on macOS: session table and rules, native monitor, login item, staying alive behind a menu bar item, rail, active total, setting, backup. | Automated tests green. The native half cannot be tested on the VM, so it needs one manual pass on a signed build: lock, sleep, lid, user switch, reboot, `kill -9`, an hour hidden. |
-| **P4b Projects** | Projects (§6.12): table and schema v4, writer actions, backup format 3, the Projects destination (§8.7), the project picker in the activity editor, and the export's project filter and column (§8.6). | Project and export tests green; a month exported for one project sums to that project's activities and nothing else. |
+| **P4b Projects** | Projects on entries (§6.12): table and schema v4, writer actions, backup format 3, the Projects destination (§8.7), the project chip in the composer, the running band and the entry sheet with the latest project as default (§8.1, §8.3, §8.4), and the export's project filter and column (§8.6). | Project and export tests green; a month exported for one project sums to that project's entries and nothing else, even when an activity was also logged under another. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
@@ -1296,7 +1322,9 @@ The original request, mapped to where it is specified:
 | Stop and restart entries at the end of the day | §6.11, §9.3, §8.2 |
 | Log when I am active on the computer | §9.9, §8.1, §8.2, §8.6, §14.14 |
 | Create activity entries from those recordings | §9.9, §8.1, §14.15 |
-| Assign activities to projects | §5.1, §6.12, §8.7 |
+| Choose the project when starting or switching, latest project by default | §6.1, §6.12, §8.3 |
+| Change the running entry's project | §6.12, §8.1 |
+| One activity in several projects | §5.1, §6.12 |
 | Filter exports by project | §8.6 |
 
 ---

@@ -13,6 +13,7 @@ import '../../domain/timeline/invariants.dart';
 import '../../domain/timeline_writer.dart';
 import '../calendar/fill_gap_sheet.dart';
 import '../today/action_feedback.dart';
+import '../today/start_action.dart';
 import '../today/today_providers.dart';
 import 'presence_providers.dart';
 
@@ -113,7 +114,13 @@ class _ActiveSessionsSheet extends ConsumerWidget {
     try {
       final undo = await ref
           .read(timelineWriterProvider)
-          .insertEntry(name: name, startUtc: span.start, endUtc: span.end);
+          .insertEntry(
+            name: name,
+            startUtc: span.start,
+            endUtc: span.end,
+            // The latest project, as Start would use (SPEC §6.12).
+            projectId: defaultProjectFromRef(ref, name),
+          );
       if (!context.mounted) return;
       showUndoableFeedback(context, message: 'Added $name', undo: undo);
     } on InvariantViolation catch (violation) {

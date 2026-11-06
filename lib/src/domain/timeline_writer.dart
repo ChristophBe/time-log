@@ -184,33 +184,49 @@ class TimelineWriter {
 
   // ---------------------------------------------------------------- starting
 
-  /// Starts [name], creating the activity if it is new. Stops whatever was
-  /// running, at exactly this entry's start instant (SPEC §4.4, §6.1).
-  Future<StartOutcome> startByName({required String name, String? note}) async {
+  /// Starts [name] in [projectId], creating the activity if it is new. Stops
+  /// whatever was running, at exactly this entry's start instant (SPEC §4.4,
+  /// §6.1).
+  Future<StartOutcome> startByName({
+    required String name,
+    String? note,
+    String? projectId,
+  }) async {
     if (!Activity.isValidName(name)) {
       throw ArgumentError.value(name, 'name', 'not a usable activity name');
     }
     final zone = await _zone();
     return _db.transaction(() async {
       final activity = await _findOrCreateActivity(name);
-      return _start(activity: activity, note: note, zone: zone);
+      return _start(
+        activity: activity,
+        note: note,
+        projectId: projectId,
+        zone: zone,
+      );
     });
   }
 
-  /// Resume: a *new* entry copying an existing entry's activity and note, so the
-  /// original span stays in history untouched (SPEC §6.3).
+  /// Resume: a *new* entry copying an existing entry's activity, note and
+  /// project, so the original span stays in history untouched (SPEC §6.3).
   Future<StartOutcome> resume(String entryId) async {
     final zone = await _zone();
     return _db.transaction(() async {
       final source = await _requireEntry(entryId);
       final activity = await _requireActivity(source.activityId);
-      return _start(activity: activity, note: source.note, zone: zone);
+      return _start(
+        activity: activity,
+        note: source.note,
+        projectId: source.projectId,
+        zone: zone,
+      );
     });
   }
 
   Future<StartOutcome> _start({
     required Activity activity,
     required String? note,
+    required String? projectId,
     required String zone,
   }) async {
     final now = _clock.nowUtc();
@@ -222,8 +238,11 @@ class TimelineWriter {
 
     if (runningRow != null) {
       final running = runningRow.toDomain();
+      // A different project is different work, so it switches like a different
+      // activity would (SPEC §6.1).
       if (running.activityId == activity.id &&
-          (running.note ?? '') == (note ?? '')) {
+          (running.note ?? '') == (note ?? '') &&
+          running.projectId == projectId) {
         return StartOutcome(
           mode: StartMode.alreadyRunning,
           entryId: running.id,
@@ -254,6 +273,7 @@ class TimelineWriter {
             id: id,
             activityId: activity.id,
             note: Value(note),
+            projectId: Value(projectId),
             startUtc: toMillis(startUtc),
             endUtc: const Value(null),
             tzName: zone,
@@ -405,6 +425,7 @@ class TimelineWriter {
                 id: id,
                 activityId: current.activityId,
                 note: Value(current.note),
+                projectId: Value(current.projectId),
                 startUtc: toMillis(boundary),
                 endUtc: const Value(null),
                 tzName: zone,
@@ -419,6 +440,7 @@ class TimelineWriter {
           endUtc: null,
           tzName: zone,
           note: current.note,
+          projectId: current.projectId,
         );
       }
 
@@ -619,6 +641,7 @@ class TimelineWriter {
               id: newId,
               activityId: entry.activityId,
               note: Value(entry.note),
+              projectId: Value(entry.projectId),
               startUtc: toMillis(at),
               endUtc: Value(
                 entry.endUtc == null ? null : toMillis(entry.endUtc!),
@@ -637,6 +660,7 @@ class TimelineWriter {
           endUtc: entry.endUtc,
           tzName: zone,
           note: entry.note,
+          projectId: entry.projectId,
         ),
         undo: _undoToken(
           'Split entry',
@@ -754,6 +778,7 @@ class TimelineWriter {
     required String name,
     required DateTime startUtc,
     required DateTime endUtc,
+    String? projectId,
   }) async {
     if (!Activity.isValidName(name)) {
       throw ArgumentError.value(name, 'name', 'not a usable activity name');
@@ -781,6 +806,7 @@ class TimelineWriter {
             TimeEntriesCompanion.insert(
               id: id,
               activityId: activity.id,
+              projectId: Value(projectId),
               startUtc: toMillis(startUtc),
               endUtc: Value(toMillis(endUtc)),
               tzName: await _zone(),
@@ -819,7 +845,7 @@ class TimelineWriter {
       await _db.delete(_db.projects).go();
       await _db.delete(_db.activeSessions).go();
 
-      // Projects before activities, which point at them.
+      // Projects before the entries that point at them.
       for (final project in plan.projectsToWrite) {
         await _db
             .into(_db.projects)
@@ -843,7 +869,6 @@ class TimelineWriter {
                 nameKey: activity.nameKey,
                 colorSeed: activity.colorSeed,
                 archived: Value(activity.archived ? 1 : 0),
-                projectId: Value(activity.projectId),
                 createdAt: toMillis(activity.createdAt),
                 updatedAt: toMillis(activity.updatedAt),
               ),
@@ -857,6 +882,7 @@ class TimelineWriter {
                 id: entry.id,
                 activityId: entry.activityId,
                 note: Value(entry.note),
+                projectId: Value(entry.projectId),
                 startUtc: toMillis(entry.startUtc),
                 endUtc: Value(
                   entry.endUtc == null ? null : toMillis(entry.endUtc!),
@@ -1108,17 +1134,17 @@ class TimelineWriter {
     });
   }
 
-  /// Deletes a project. Its activities go back to none; no entry is touched
-  /// (SPEC §6.12).
+  /// Deletes a project. Its entries go back to none; no entry is deleted and
+  /// no instant moves (SPEC §6.12).
   Future<UndoToken> deleteProject(String projectId) =>
       _db.transaction(() async {
         final before = await (_db.select(
           _db.projects,
         )..where((t) => t.id.equals(projectId))).getSingle();
-        // Read first so the undo knows which activities to put back — the ones
-        // this removed, not whatever is in no project by then.
+        // Snapshotted first so the undo puts back the entries this removed,
+        // not whatever is in no project by then.
         final members = await (_db.select(
-          _db.activities,
+          _db.timeEntries,
         )..where((t) => t.projectId.equals(projectId))).get();
 
         await _clearProject(projectId);
@@ -1126,52 +1152,38 @@ class TimelineWriter {
           _db.projects,
         )..where((t) => t.id.equals(projectId))).go();
 
+        final entriesUndo = _undoToken(
+          'Deleted ${before.name}',
+          snapshots: members,
+        );
         return UndoToken('Deleted ${before.name}', () async {
           await _db.transaction(() async {
+            // The project first: the restored entries point at it.
             await _db.into(_db.projects).insert(before);
-            for (final row in members) {
-              await (_db.update(
-                _db.activities,
-              )..where((t) => t.id.equals(row.id))).write(
-                ActivitiesCompanion(
-                  projectId: Value(projectId),
-                  updatedAt: Value(row.updatedAt),
-                ),
-              );
-            }
+            await entriesUndo.undo();
           });
         });
       });
 
-  /// Puts an activity, and so its whole history, in [projectId], or in none
-  /// when it is null (SPEC §6.12). Null when it was already there.
-  Future<UndoToken?> setActivityProject({
-    required String activityId,
+  /// Files one entry under [projectId], or under none when it is null
+  /// (SPEC §6.12). Only this entry: the activity's other entries keep theirs.
+  /// Null when it was already there, and then nothing is written.
+  Future<UndoToken?> setEntryProject({
+    required String entryId,
     required String? projectId,
   }) => _db.transaction(() async {
-    final before = await (_db.select(
-      _db.activities,
-    )..where((t) => t.id.equals(activityId))).getSingle();
-    if (before.projectId == projectId) return null;
+    final row = await _requireRow(entryId);
+    if (row.projectId == projectId) return null;
 
     await (_db.update(
-      _db.activities,
-    )..where((t) => t.id.equals(activityId))).write(
-      ActivitiesCompanion(
+      _db.timeEntries,
+    )..where((t) => t.id.equals(entryId))).write(
+      TimeEntriesCompanion(
         projectId: Value(projectId),
         updatedAt: Value(toMillis(_clock.nowUtc())),
       ),
     );
-    return UndoToken('Moved ${before.name}', () async {
-      await (_db.update(
-        _db.activities,
-      )..where((t) => t.id.equals(activityId))).write(
-        ActivitiesCompanion(
-          projectId: Value(before.projectId),
-          updatedAt: Value(before.updatedAt),
-        ),
-      );
-    });
+    return _undoToken('Project changed', snapshots: <TimeEntryRow>[row]);
   });
 
   Future<ProjectRow?> _findProjectByKey(String key) => (_db.select(
@@ -1180,9 +1192,9 @@ class TimelineWriter {
 
   Future<void> _clearProject(String projectId) async {
     await (_db.update(
-      _db.activities,
+      _db.timeEntries,
     )..where((t) => t.projectId.equals(projectId))).write(
-      ActivitiesCompanion(
+      TimeEntriesCompanion(
         projectId: const Value(null),
         updatedAt: Value(toMillis(_clock.nowUtc())),
       ),
@@ -1326,6 +1338,7 @@ class TimelineWriter {
       id: Value(row.id),
       activityId: Value(row.activityId),
       note: Value(row.note),
+      projectId: Value(row.projectId),
       startUtc: Value(row.startUtc),
       endUtc: Value(row.endUtc),
       tzName: Value(row.tzName),

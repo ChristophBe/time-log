@@ -22,6 +22,7 @@ void main() {
     DateTime? end,
     String activityId = 'a1',
     String? note,
+    String? projectId,
   }) => TimeEntry(
     id: id,
     activityId: activityId,
@@ -29,6 +30,7 @@ void main() {
     endUtc: end,
     tzName: 'Europe/Berlin',
     note: note,
+    projectId: projectId,
   );
 
   CsvExport export(List<TimeEntry> entries) => buildCsv(
@@ -304,17 +306,15 @@ void main() {
   group('projects (SPEC §8.6)', () {
     const clientA = Project(id: 'p1', name: 'Client A');
     const projects = <String, Project>{'p1': clientA};
-    // Writing specs is in Client A; Email is in no project.
-    final filed = <String, Activity>{
-      'a1': specs.withProject('p1'),
-      'a2': email,
-    };
+    final filed = <String, Activity>{'a1': specs, 'a2': email};
 
+    // The specs entry is in Client A; the email entry is in no project.
     final day = <TimeEntry>[
       entry(
         id: 'specs',
         start: DateTime.utc(2026, 3, 10, 9),
         end: DateTime.utc(2026, 3, 10, 10),
+        projectId: 'p1',
       ),
       entry(
         id: 'email',
@@ -361,6 +361,30 @@ void main() {
       expect(filtered(const OnlyProject('p1')).total, const Duration(hours: 1));
       expect(filtered(const NoProject()).total, const Duration(minutes: 30));
       expect(filtered(const OnlyProject('p1')).rowCount, 1);
+    });
+
+    test('one activity splits across projects by entry', () {
+      final csv = buildCsv(
+        entries: <TimeEntry>[
+          ...day,
+          entry(
+            id: 'specs-unfiled',
+            start: DateTime.utc(2026, 3, 10, 11),
+            end: DateTime.utc(2026, 3, 10, 11, 15),
+          ),
+        ],
+        activities: filed,
+        projects: projects,
+        project: const NoProject(),
+        fromUtc: from,
+        toUtc: to,
+        now: now,
+      );
+
+      expect(rowsOf(csv).map((row) => column(row, 'id')), <String>[
+        'email',
+        'specs-unfiled',
+      ]);
     });
 
     test('a project with nothing in the range is an empty file', () {

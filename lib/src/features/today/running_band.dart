@@ -8,7 +8,9 @@ import '../../core/formatters.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
+import '../../domain/models/project.dart';
 import '../../domain/models/time_entry.dart';
+import '../projects/project_chip.dart';
 import 'today_providers.dart';
 
 /// The second row of the day header (SPEC §8.1): what is running, for how long,
@@ -42,6 +44,8 @@ class RunningBand extends ConsumerWidget {
         ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{};
     final settings =
         ref.watch(appSettingsProvider).value ?? const AppSettings();
+    final projects =
+        ref.watch(projectsByIdProvider).value ?? const <String, Project>{};
 
     if (running == null) return _IdleBand(onResumeLast: onResumeLast);
 
@@ -66,6 +70,12 @@ class RunningBand extends ConsumerWidget {
     // taller, which is the one dimension there is room in (SPEC §10.2).
     final stacked = MediaQuery.textScalerOf(context).scale(14) > 20;
 
+    // Only once there is a project to choose; without one the band reads as
+    // it always has (SPEC §8.1).
+    final project = projects.isEmpty
+        ? null
+        : (projects[running.projectId]?.name ?? 'No project');
+
     return BandShell(
       background: colors.tint,
       spine: colors.edge,
@@ -76,42 +86,54 @@ class RunningBand extends ConsumerWidget {
         // unusable with a screen reader (SPEC §10.4).
         label:
             'Running: ${activity?.name ?? 'Activity'}, started $since, '
+            '${project == null ? '' : 'in $project, '}'
             '${formatDurationVerbose(running.durationAt(now))} so far',
         child: _BandLayout(
           stacked: stacked,
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                activity?.name ?? 'Activity',
-                style: Theme.of(context).textTheme.titleMedium,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              DefaultTextStyle.merge(
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+          title: _projectMenu(
+            context,
+            ref,
+            running: running,
+            projects: projects,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  activity?.name ?? 'Activity',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                // Two Texts rather than one interpolated string: the note
-                // is the part that may be long, so it is the part that
-                // ellipsizes.
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Flexible(child: Text('since $since')),
-                    if (running.note != null &&
-                        running.note!.isNotEmpty) ...<Widget>[
-                      const Text(' · '),
-                      Flexible(child: Text(running.note!)),
+                DefaultTextStyle.merge(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  // Two Texts rather than one interpolated string: the note
+                  // is the part that may be long, so it is the part that
+                  // ellipsizes.
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Flexible(child: Text('since $since')),
+                      if (project != null) ...<Widget>[
+                        const Text(' · '),
+                        Flexible(child: Text(project)),
+                        const Icon(Icons.arrow_drop_down_rounded, size: 16),
+                      ],
+                      if (running.note != null &&
+                          running.note!.isNotEmpty) ...<Widget>[
+                        const Text(' · '),
+                        Flexible(child: Text(running.note!)),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           elapsed: ExcludeSemantics(
             child: _ElapsedText(entry: running, alignLeft: stacked),
@@ -122,6 +144,43 @@ class RunningBand extends ConsumerWidget {
           action: FilledButton.tonal(
             onPressed: onStop,
             child: const Text('Stop'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Makes the title open the project menu, when there are projects to pick
+  /// from (SPEC §8.1, §6.12). The whole title is the target rather than the
+  /// project's few characters, so it stays a full-size tap target without
+  /// making the band taller.
+  Widget _projectMenu(
+    BuildContext context,
+    WidgetRef ref, {
+    required TimeEntry running,
+    required Map<String, Project> projects,
+    required Widget child,
+  }) {
+    if (projects.isEmpty) return child;
+    return ProjectMenu(
+      projectId: running.projectId,
+      projects: projects,
+      onChanged: (id) => setEntryProjectWithFeedback(
+        context,
+        ref,
+        entryId: running.id,
+        projectId: id,
+      ),
+      builder: (context, current, open) => Semantics(
+        button: true,
+        label: 'Change project',
+        child: InkWell(
+          key: const Key('running-project'),
+          onTap: open,
+          borderRadius: Radii.smAll,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kMinTapTarget),
+            child: Align(alignment: Alignment.centerLeft, child: child),
           ),
         ),
       ),

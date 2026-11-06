@@ -48,6 +48,8 @@ class WidgetHarness {
     this.entries = const <TimeEntry>[],
     this.activities = const <String, Activity>{},
     this.projects = const <String, Project>{},
+    this.latestProjectByActivity = const <String, String?>{},
+    this.projectActivityIds = const <String, Set<String>>{},
     this.suggestions = const <ActivitySuggestion>[],
     this.lastFinished,
     this.dayWindows,
@@ -66,6 +68,13 @@ class WidgetHarness {
 
   /// Projects, by id (SPEC §6.12). None unless a test gives some.
   final Map<String, Project> projects;
+
+  /// Each activity's latest project, behind the composer's default
+  /// (SPEC §6.12).
+  final Map<String, String?> latestProjectByActivity;
+
+  /// The activities logged under each project (SPEC §8.7).
+  final Map<String, Set<String>> projectActivityIds;
   final List<ActivitySuggestion> suggestions;
   final TimeEntry? lastFinished;
 
@@ -156,6 +165,13 @@ class WidgetHarness {
           ),
           projectsByIdProvider.overrideWith(
             (ref) => Stream<Map<String, Project>>.value(projects),
+          ),
+          latestProjectByActivityProvider.overrideWith(
+            (ref) =>
+                Stream<Map<String, String?>>.value(latestProjectByActivity),
+          ),
+          projectActivityIdsProvider.overrideWith(
+            (ref) => Stream<Map<String, Set<String>>>.value(projectActivityIds),
           ),
           lastFinishedEntryProvider.overrideWith((ref) async => lastFinished),
           runStartUtcProvider.overrideWith(

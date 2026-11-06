@@ -177,9 +177,11 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
   /// A suggestion tap goes through the same action as the Start button, and
   /// leaves the composer at rest afterwards.
   Future<void> _startNamed(String name) async {
+    // Resolved before the reset, which forgets a picked project.
+    final projectId = _composer.projectFor(ref, name);
     _composer.reset();
     _screenFocus.requestFocus();
-    await startActivityNamed(context, ref, name);
+    await startActivityNamed(context, ref, name, projectId: projectId);
   }
 
   Future<void> _stop() async {

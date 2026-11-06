@@ -778,17 +778,19 @@ void main() {
   });
 
   group('SPEC §6.12 projects', () {
-    Future<String?> projectOf(String activityId) async => (await (h.db.select(
-      h.db.activities,
-    )..where((t) => t.id.equals(activityId))).getSingle()).projectId;
-
-    /// One finished entry of [name], returning its activity id.
-    Future<String> activityNamed(String name) async {
-      final start = await h.writer.startByName(name: name);
+    /// One finished entry of [name] in [projectId], returning its id.
+    Future<String> loggedEntry(String name, {String? projectId}) async {
+      final start = await h.writer.startByName(
+        name: name,
+        projectId: projectId,
+      );
       h.clock.advance(const Duration(minutes: 30));
       await h.writer.stop();
-      return (await h.byId(start.entryId)).activityId;
+      return start.entryId;
     }
+
+    Future<String?> projectOf(String entryId) async =>
+        (await h.byId(entryId)).projectId;
 
     test('createProjectResolvesAnExistingNameKey', () async {
       final first = await h.writer.createProject('Client A');
@@ -841,46 +843,171 @@ void main() {
       expect((await h.db.select(h.db.projects).getSingle()).name, 'client a');
     });
 
-    test(
-      'deletingAProjectUnassignsItsActivitiesAndKeepsTheirEntries',
-      () async {
-        final specs = await activityNamed('Writing specs');
-        final email = await activityNamed('Email');
-        final project = (await h.writer.createProject('Client A')).project;
-        await h.writer.setActivityProject(
-          activityId: specs,
-          projectId: project.id,
-        );
-        await h.writer.setActivityProject(
-          activityId: email,
-          projectId: project.id,
-        );
-        final before = await h.entries();
+    test('startWithAProjectStoresItOnTheEntry', () async {
+      final a = (await h.writer.createProject('Client A')).project;
 
-        await h.writer.deleteProject(project.id);
-
-        expect(await h.db.select(h.db.projects).get(), isEmpty);
-        expect(await projectOf(specs), isNull);
-        expect(await projectOf(email), isNull);
-        expect(await h.entries(), before, reason: 'no entry is touched');
-        expect(await h.db.select(h.db.activities).get(), hasLength(2));
-      },
-    );
-
-    test('deletingAProjectIsUndoable', () async {
-      final specs = await activityNamed('Writing specs');
-      final email = await activityNamed('Email');
-      final project = (await h.writer.createProject('Client A')).project;
-      await h.writer.setActivityProject(
-        activityId: specs,
-        projectId: project.id,
+      final started = await h.writer.startByName(
+        name: 'Email',
+        projectId: a.id,
       );
 
-      final undo = await h.writer.deleteProject(project.id);
+      expect(await projectOf(started.entryId), a.id);
+    });
+
+    test('oneActivityCanBeLoggedUnderTwoProjects', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final b = (await h.writer.createProject('Client B')).project;
+
+      final first = await loggedEntry('Email', projectId: a.id);
+      final second = await loggedEntry('Email', projectId: b.id);
+
+      expect(await projectOf(first), a.id);
+      expect(await projectOf(second), b.id);
+      expect(
+        (await h.byId(first)).activityId,
+        (await h.byId(second)).activityId,
+        reason: 'the same activity in both',
+      );
+    });
+
+    test('startingTheRunningActivityInAnotherProjectSwitches', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final b = (await h.writer.createProject('Client B')).project;
+      await h.writer.startByName(name: 'Email', projectId: a.id);
+      h.clock.advance(const Duration(minutes: 20));
+
+      final outcome = await h.writer.startByName(
+        name: 'Email',
+        projectId: b.id,
+      );
+
+      expect(outcome.mode, StartMode.switched);
+      final entries = await h.entries();
+      expect(entries.map((e) => e.projectId), <String?>[a.id, b.id]);
+    });
+
+    test('aWrongProjectCorrectedAtOnceReplacesTheMisstart', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final b = (await h.writer.createProject('Client B')).project;
+      await h.writer.startByName(name: 'Email', projectId: a.id);
+      h.clock.advance(const Duration(seconds: 10));
+
+      final outcome = await h.writer.startByName(
+        name: 'Email',
+        projectId: b.id,
+      );
+
+      expect(outcome.mode, StartMode.replacedMisstart);
+      expect((await h.entries()).single.projectId, b.id);
+    });
+
+    test('theSameActivityNoteAndProjectIsAlreadyRunning', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      await h.writer.startByName(name: 'Email', projectId: a.id);
+      h.clock.advance(const Duration(minutes: 20));
+
+      final outcome = await h.writer.startByName(
+        name: 'Email',
+        projectId: a.id,
+      );
+
+      expect(outcome.mode, StartMode.alreadyRunning);
+      expect(await h.entries(), hasLength(1));
+    });
+
+    test('resumeAndSplitKeepTheProject', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final first = await loggedEntry('Email', projectId: a.id);
+      await h.writer.startByName(name: 'Other');
+      h.clock.advance(const Duration(minutes: 10));
+
+      final resumed = await h.writer.resume(first);
+      expect(await projectOf(resumed.entryId), a.id);
+
+      final source = await h.byId(first);
+      final split = await h.writer.split(
+        entryId: first,
+        atUtc: source.startUtc.add(const Duration(minutes: 10)),
+      );
+      expect(split.second.projectId, a.id);
+      expect(await projectOf(split.second.id), a.id);
+    });
+
+    test('settingAnEntrysProjectIsUndoable', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final b = (await h.writer.createProject('Client B')).project;
+      final entry = await loggedEntry('Email', projectId: a.id);
+
+      final undo = await h.writer.setEntryProject(
+        entryId: entry,
+        projectId: b.id,
+      );
+      expect(await projectOf(entry), b.id);
+
+      await undo!.undo();
+      expect(await projectOf(entry), a.id);
+    });
+
+    test("an entry's project moves only that entry", () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final first = await loggedEntry('Email', projectId: a.id);
+      final second = await loggedEntry('Email', projectId: a.id);
+
+      await h.writer.setEntryProject(entryId: first, projectId: null);
+
+      expect(await projectOf(first), isNull);
+      expect(await projectOf(second), a.id, reason: 'not retroactive');
+    });
+
+    test('settingTheSameProjectChangesNothing', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final entry = await loggedEntry('Email', projectId: a.id);
+      final before = await (h.db.select(
+        h.db.timeEntries,
+      )..where((t) => t.id.equals(entry))).getSingle();
+
+      final undo = await h.writer.setEntryProject(
+        entryId: entry,
+        projectId: a.id,
+      );
+
+      expect(undo, isNull);
+      final after = await (h.db.select(
+        h.db.timeEntries,
+      )..where((t) => t.id.equals(entry))).getSingle();
+      expect(after.updatedAt, before.updatedAt, reason: 'nothing was written');
+    });
+
+    test('deletingAProjectClearsItsEntriesAndKeepsThem', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final specs = await loggedEntry('Writing specs', projectId: a.id);
+      final email = await loggedEntry('Email', projectId: a.id);
+      final times = (await h.entries())
+          .map((e) => (e.startUtc, e.endUtc))
+          .toList();
+
+      await h.writer.deleteProject(a.id);
+
+      expect(await h.db.select(h.db.projects).get(), isEmpty);
+      expect(await projectOf(specs), isNull);
+      expect(await projectOf(email), isNull);
+      expect(
+        (await h.entries()).map((e) => (e.startUtc, e.endUtc)),
+        times,
+        reason: 'no instant moves',
+      );
+    });
+
+    test('deletingAProjectIsUndoable', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      final specs = await loggedEntry('Writing specs', projectId: a.id);
+      final email = await loggedEntry('Email');
+
+      final undo = await h.writer.deleteProject(a.id);
       await undo.undo();
 
-      expect((await h.db.select(h.db.projects).getSingle()).id, project.id);
-      expect(await projectOf(specs), project.id);
+      expect((await h.db.select(h.db.projects).getSingle()).id, a.id);
+      expect(await projectOf(specs), a.id);
       expect(
         await projectOf(email),
         isNull,
@@ -888,68 +1015,18 @@ void main() {
       );
     });
 
-    test('settingAnActivitysProjectIsUndoable', () async {
-      final specs = await activityNamed('Writing specs');
+    test('a merge of activities keeps each entry\'s project', () async {
       final a = (await h.writer.createProject('Client A')).project;
-      final b = (await h.writer.createProject('Client B')).project;
-      await h.writer.setActivityProject(activityId: specs, projectId: a.id);
+      final emails = await loggedEntry('Emails', projectId: a.id);
+      await loggedEntry('Email');
 
-      final undo = await h.writer.setActivityProject(
-        activityId: specs,
-        projectId: b.id,
-      );
-      expect(await projectOf(specs), b.id);
-
-      await undo!.undo();
-      expect(await projectOf(specs), a.id);
-    });
-
-    test('clearing an activity\'s project leaves it in none', () async {
-      final specs = await activityNamed('Writing specs');
-      final a = (await h.writer.createProject('Client A')).project;
-      await h.writer.setActivityProject(activityId: specs, projectId: a.id);
-
-      await h.writer.setActivityProject(activityId: specs, projectId: null);
-
-      expect(await projectOf(specs), isNull);
-      expect(await h.db.select(h.db.projects).get(), hasLength(1));
-    });
-
-    test('settingTheSameProjectChangesNothing', () async {
-      final specs = await activityNamed('Writing specs');
-      final a = (await h.writer.createProject('Client A')).project;
-      await h.writer.setActivityProject(activityId: specs, projectId: a.id);
-      final before = await (h.db.select(
-        h.db.activities,
-      )..where((t) => t.id.equals(specs))).getSingle();
-
-      final undo = await h.writer.setActivityProject(
-        activityId: specs,
-        projectId: a.id,
+      await h.writer.renameActivity(
+        activityId: (await h.byId(emails)).activityId,
+        name: 'Email',
       );
 
-      expect(undo, isNull);
-      final after = await (h.db.select(
-        h.db.activities,
-      )..where((t) => t.id.equals(specs))).getSingle();
-      expect(after.updatedAt, before.updatedAt, reason: 'nothing was written');
+      expect(await projectOf(emails), a.id);
     });
-
-    test(
-      'a project survives a merge of activities only on the survivor',
-      () async {
-        // §6.7's merge drops the merged activity, and its project with it; the
-        // surviving activity keeps its own.
-        final emails = await activityNamed('Emails');
-        final email = await activityNamed('Email');
-        final a = (await h.writer.createProject('Client A')).project;
-        await h.writer.setActivityProject(activityId: emails, projectId: a.id);
-
-        await h.writer.renameActivity(activityId: emails, name: 'Email');
-
-        expect(await projectOf(email), isNull);
-      },
-    );
   });
 
   group('database-level guarantees', () {
@@ -1032,6 +1109,20 @@ void main() {
       expect(entries[0].activityId, entries[1].activityId);
       expect(entries[1].note, 'release prep');
       expect(await h.activityNameOf(entries[1]), 'Writing specs');
+    });
+
+    test('rollOverKeepsTheProject', () async {
+      final a = (await h.writer.createProject('Client A')).project;
+      h.clock.setTo(DateTime.utc(2026, 3, 10, 22));
+      await h.writer.startByName(name: 'Writing specs', projectId: a.id);
+      h.clock.setTo(DateTime.utc(2026, 3, 11, 6));
+
+      await h.writer.rollOverRunningEntry(days: days(3));
+
+      expect((await h.entries()).map((e) => e.projectId), <String?>[
+        a.id,
+        a.id,
+      ]);
     });
 
     test('rollOverBackfillsEveryMissedMidnight', () async {

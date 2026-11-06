@@ -239,6 +239,103 @@ final class ProjectsByIdProvider
 
 String _$projectsByIdHash() => r'ed099c00b85e52ff74174d57213a252af4b5962b';
 
+/// Each activity's most recent project, for the composer's default
+/// (SPEC §6.12).
+
+@ProviderFor(latestProjectByActivity)
+final latestProjectByActivityProvider = LatestProjectByActivityProvider._();
+
+/// Each activity's most recent project, for the composer's default
+/// (SPEC §6.12).
+
+final class LatestProjectByActivityProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<Map<String, String?>>,
+          Map<String, String?>,
+          Stream<Map<String, String?>>
+        >
+    with
+        $FutureModifier<Map<String, String?>>,
+        $StreamProvider<Map<String, String?>> {
+  /// Each activity's most recent project, for the composer's default
+  /// (SPEC §6.12).
+  LatestProjectByActivityProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'latestProjectByActivityProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$latestProjectByActivityHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<Map<String, String?>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<Map<String, String?>> create(Ref ref) {
+    return latestProjectByActivity(ref);
+  }
+}
+
+String _$latestProjectByActivityHash() =>
+    r'74523ca95d0e314e4899d85f95cdea06f45db041';
+
+/// The activities each project has been logged under (SPEC §8.7).
+
+@ProviderFor(projectActivityIds)
+final projectActivityIdsProvider = ProjectActivityIdsProvider._();
+
+/// The activities each project has been logged under (SPEC §8.7).
+
+final class ProjectActivityIdsProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<Map<String, Set<String>>>,
+          Map<String, Set<String>>,
+          Stream<Map<String, Set<String>>>
+        >
+    with
+        $FutureModifier<Map<String, Set<String>>>,
+        $StreamProvider<Map<String, Set<String>>> {
+  /// The activities each project has been logged under (SPEC §8.7).
+  ProjectActivityIdsProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'projectActivityIdsProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$projectActivityIdsHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<Map<String, Set<String>>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<Map<String, Set<String>>> create(Ref ref) {
+    return projectActivityIds(ref);
+  }
+}
+
+String _$projectActivityIdsHash() =>
+    r'c56ba499ca24c0f11df1394c386a788515de25ae';
+
 /// Entries touching the selected day, oldest first. An entry crossing midnight
 /// appears here for both days it touches (SPEC §5.3).
 
