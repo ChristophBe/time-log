@@ -27,7 +27,7 @@ cheap enough that you keep doing it:
 | --- | --- |
 | Overlapping entries | You do one thing at a time; non-overlap is what makes the calendar and the totals trustworthy. |
 | Automatic entries (app/window/idle detection) | Large platform-specific surface, privacy-sensitive, and it changes the product. What you did stays something you say. The one thing recorded for you is *whether you were at the computer*, which is a separate, opt-in layer and never an entry (§9.9). |
-| Projects, tags, clients, billing, invoicing | Free-text activity names cover personal tracking; structure can be layered on later (§13, P6). |
+| Tags, clients, billing, invoicing | Free-text activity names plus projects (§6.12) cover personal tracking; more structure can be layered on later (§13, P6). |
 | Multi-device sync, accounts, sharing | Local-only keeps v1 small and private. The schema does not preclude it (§5.4). |
 | Pomodoro, reminders to start, goals, streaks | Different product. Not what is being asked for. |
 | Reports beyond per-day and per-week totals | Export exists for anything deeper (§8.6). |
@@ -70,6 +70,7 @@ length"**. Everything else can cost a tap more.
 | Term | Meaning |
 | --- | --- |
 | **Activity** | A named kind of work ("Writing specs"). Identified by its normalised name. Carries a stable colour. |
+| **Project** | A named group of activities ("Client A"). An activity belongs to at most one. Used to read and export the time of several activities together (§6.12, §8.7). |
 | **Entry** | One continuous span of doing an activity: `activityId`, optional note, `startAt`, `endAt`. |
 | **Running entry** | The entry with `endAt == null`. At most one exists. Its end is "now". |
 | **Gap** | Time between two entries that no entry covers. Legal, and means "untracked". |
@@ -122,6 +123,16 @@ applies to all history at once.
 | `nameKey` | string | Unique. `name` trimmed, whitespace-collapsed, lowercased (Unicode-aware). Matching key for "is this the same activity?". |
 | `colorSeed` | int | Index into the palette (§9.7). Assigned on creation from the least-used palette slot; user-editable. |
 | `archived` | bool | Hidden from suggestions, kept in history. |
+| `projectId` | fk → Project? | `null` ⇒ no project. On the activity rather than the entry, so moving an activity re-files its whole history (§6.12). |
+| `createdAt` / `updatedAt` | utc millis | |
+
+**Project** — a named group of activities (§6.12).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid v4 string | |
+| `name` | string | As typed. 1–120 chars after trim. |
+| `nameKey` | string | Unique. Normalised exactly like an activity's. |
 | `createdAt` / `updatedAt` | utc millis | |
 
 **TimeEntry** — one span.
@@ -155,6 +166,14 @@ long-run threshold, "continue window" (§6.4), track active time (§9.9, off by 
 ### 5.2 Schema
 
 ```sql
+CREATE TABLE projects (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  name_key   TEXT    NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE activities (
   id         TEXT    NOT NULL PRIMARY KEY,
   name       TEXT    NOT NULL,
@@ -162,7 +181,9 @@ CREATE TABLE activities (
   color_seed INTEGER NOT NULL,
   archived   INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  -- Added in schema v4; NULL is "no project".
+  project_id TEXT    REFERENCES projects(id)
 );
 
 CREATE TABLE time_entries (
@@ -389,6 +410,30 @@ Edge cases:
   closes the entry at the first midnight and does *not* restart it, so the app comes back with
   nothing running rather than with 400 invented days.
 
+### 6.12 Projects
+
+A project groups activities so their time can be read and exported together — "everything for
+Client A this month". It belongs to the **activity**, not the entry: an activity is in at most one
+project, and every entry of that activity is in it too. That keeps logging exactly as cheap as it was
+(§1) — starting something never asks for a project — and it means a project is decided once per kind
+of work rather than once per span.
+
+Four actions, each one transaction with one undo token:
+
+- **Create.** The name is resolved by `nameKey`, as an activity's is (§5.1), so creating a name that
+  exists returns that project and nothing is written or offered for undo.
+- **Rename.** Renaming to a `nameKey` another project already has is **refused**, naming the other
+  project. Projects are not merged: unlike activities (§6.7), a merge would silently move every
+  activity of one project into another, and a project list is short enough to do that by hand.
+- **Delete.** The project's activities go back to having no project; no entry is touched and no
+  activity is deleted. Undo restores the project and every assignment the delete removed.
+- **Set an activity's project** (or clear it). This is **retroactive** by construction, like §6.7's
+  rename: moving an activity re-files its whole history. Picking the project it already has is a
+  no-op: nothing is written and no undo is offered.
+
+None of these touches an instant or the running slot, so like §6.9 and §6.10 they re-check no §4
+invariant.
+
 ---
 
 ## 7. Boundary editing rules
@@ -460,9 +505,10 @@ sheet's overflow menu for the rest of the session.
 
 ## 8. Screens
 
-Navigation: `Today` / `History` / `Settings`. Bottom navigation bar on phones, navigation rail from
-the medium breakpoint (≥ 600 dp), extended rail on desktop (≥ 1240 dp). `go_router` with deep links
-`/` , `/day/:isoDate`, `/entry/:id`, `/history`, `/settings`.
+Navigation: `Today` / `History` / `Projects` / `Settings`. Bottom navigation bar on phones,
+navigation rail from the medium breakpoint (≥ 600 dp), extended rail on desktop (≥ 1240 dp).
+`go_router` with deep links `/` , `/day/:isoDate`, `/entry/:id`, `/history`, `/projects`,
+`/settings`.
 
 ### 8.1 Today (home)
 
@@ -630,10 +676,18 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
 - Snap interval · 12/24-hour · first day of week · theme (system/light/dark) · default zoom.
 - Continue window (§6.4) · long-run threshold.
 - **Export a date range** (built): a CSV of the entries between two dates, for a spreadsheet or an
-  invoice. Columns `id, activity, note, start_local, end_local, start_utc, end_utc,
+  invoice. Columns `id, activity, project, note, start_local, end_local, start_utc, end_utc,
   duration_minutes, tz`. Presets — this week, last week, this month, last month — plus a custom
   range, and a count and total shown before you commit. Shared via the platform share sheet / save
   dialog; downloaded on web.
+
+  **Filter by project** (§6.12): once at least one project exists, a second row of chips offers
+  **All** · each project · **No project**, one at a time. The count and total shown before you commit
+  are for the filtered file, and the file name carries the project
+  (`time-log-client-a-2026-03-01_2026-03-31.csv`, or `time-log-no-project-…`) so two exports of the
+  same range for different projects never collide. With no projects the row is not shown and the
+  sheet is exactly as it was. The `project` column is filled whatever the filter, and is empty for an
+  activity with no project.
 
   Three rules make the file trustworthy, and each has a test:
   - **Rows are clipped to the range.** An entry that began the evening before is reported starting
@@ -647,22 +701,41 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
     RFC 4180 quoting, CRLF, and a UTF-8 BOM so Excel reads a non-ASCII activity name correctly.
     None of it follows the 12/24-hour display setting.
 
-- **Export everything** (P4): JSON at full fidelity — `schemaVersion`, activities, entries,
-  settings — which is the backup half of this and a different job from the extract above: it has to
-  round-trip through import (§14.10), so it cannot be a slice.
+- **Export everything** (P4): JSON at full fidelity — `schemaVersion`, projects, activities (with
+  their `projectId`), entries, settings — which is the backup half of this and a different job from
+  the extract above: it has to round-trip through import (§14.10), so it cannot be a slice. Format 3
+  added projects; a file from before then imports with every activity in no project.
 - **Import** (built): JSON only. Merge by `id`, newest `updatedAt` wins; shows a dry-run summary
   (added / updated / skipped / rejected) before applying, and rejects any file that would break §4,
   naming the first offending pair. Two details worth stating because they are where this goes wrong:
   the §4 check runs over the **merged** timeline rather than over the incoming file alone — a file
   that is consistent with itself can still overlap what is already here — and the whole import is
   one transaction, so a rejected file changes nothing (§4.6). Tombstones are carried in the file and
-  restored, or a round trip would resurrect everything ever deleted.
+  restored, or a round trip would resurrect everything ever deleted. Projects merge the same way, and
+  a file is rejected if an activity would point at a project neither it nor the database has.
 - **Active time** (§9.9): **Track time at this computer**, off by default, with what it records and
   what it does to the app stated beside the switch rather than behind it, then the login item's
   status and **Delete active-time history**. On a platform without it, the switch is disabled and
   says so (§14.12).
 - **Delete all data**, with typed confirmation. This includes active sessions.
 - About: version, licences, link to this spec.
+
+### 8.7 Projects
+
+The place projects are made and their activities seen (§6.12).
+
+- A list of projects, alphabetical, each a header (name and **⋯** for its sheet) over its
+  activities, one row each with the activity's colour dot, as in History (§8.5). **No project** comes last and holds
+  every activity not in one, so every activity is reachable from here.
+- **New project** — a FAB on a phone, a button in the header from the rail breakpoint — asks for a
+  name. An existing name is not an error; it is the existing project (§6.12).
+- A project's sheet: the name, editable, with **Save**; and **Delete** demoted and in the error
+  colour, with a line saying what happens to its activities. Both undoable.
+- Tapping an activity opens the activity editor (§6.7), which carries a **Project** picker — No
+  project and each project — under the colour. That picker is the one place a project is chosen, and
+  it is reachable from here and from the entry sheet's activity picker (§8.4).
+- Empty state: one sentence on what projects are for, and **New project**.
+- Archived activities are not listed.
 
 ---
 
@@ -1079,6 +1152,13 @@ All code takes time from an injected `Clock` (`clock` package) provided by River
 
 **Unit — splitting (§6.6).** `splitReturnsTheSecondHalf`.
 
+**Unit — projects (§6.12, §8.6).** `createProjectResolvesAnExistingNameKey` ·
+`renamingAProjectToATakenNameIsRefused` · `deletingAProjectUnassignsItsActivitiesAndKeepsTheirEntries` ·
+`deletingAProjectIsUndoable` · `settingAnActivitysProjectIsUndoable` ·
+`settingTheSameProjectChangesNothing` · `projectColumnFollowsActivity` ·
+`filterByProjectKeepsOnlyItsEntries` · `noProjectFilterKeepsOnlyUnassigned` ·
+`filteredTotalSumsOnlyKeptRows`.
+
 **Unit — boundary math (§7).** `draggingSharedBoundaryConservesTotalTrackedTime` ·
 `draggingFreeEdgeGrowsIntoGapOnly` · `clampStopsAtNeighbourMinusMinimum` ·
 `snapRoundsInstantNotDelta` · `repeatedEditsDoNotDrift` · `runningEntryEndIsNotEditable` ·
@@ -1155,8 +1235,9 @@ the README both use `Europe/Berlin`.
 | **P4.1 Day rollover** | Stop and restart the running entry at midnight (§6.11), the catch-up pass at launch / resume / tick (§9.3) — the app's first lifecycle hook — the day view following midnight (§8.2), and the long-run threshold measured over the whole run (§8.1). | Rollover tests green; a clock left running overnight comes back as one entry per day with the 8 h banner still able to fire. |
 | **P4.2 CI** | GitHub Actions: §12's gates on every pull request, all six platform builds and the integration suite on every push to `main` (§14.12), and a `v*` tag cutting a release — the macOS artefact through `tool/release_macos.sh` so there is one definition of a release build. | Workflows green on `main`, including the first execution of the integration suite. |
 | **P4a Active time** | §9.9 on macOS: session table and rules, native monitor, login item, staying alive behind a menu bar item, rail, active total, setting, backup. | Automated tests green. The native half cannot be tested on the VM, so it needs one manual pass on a signed build: lock, sleep, lid, user switch, reboot, `kill -9`, an hour hidden. |
+| **P4b Projects** | Projects (§6.12): table and schema v4, writer actions, backup format 3, the Projects destination (§8.7), the project picker in the activity editor, and the export's project filter and column (§8.6). | Project and export tests green; a month exported for one project sums to that project's activities and nothing else. |
 | **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
-| **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, projects/tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
+| **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
 Each phase ends with: `flutter analyze` clean, tests green, a11y criteria in §10 met for the new
 surface, and the spec updated if the phase taught us something.
@@ -1215,6 +1296,8 @@ The original request, mapped to where it is specified:
 | Stop and restart entries at the end of the day | §6.11, §9.3, §8.2 |
 | Log when I am active on the computer | §9.9, §8.1, §8.2, §8.6, §14.14 |
 | Create activity entries from those recordings | §9.9, §8.1, §14.15 |
+| Assign activities to projects | §5.1, §6.12, §8.7 |
+| Filter exports by project | §8.6 |
 
 ---
 

@@ -17,21 +17,28 @@ typedef ExportRange = ({DateTime from, DateTime to});
 @Riverpod(keepAlive: true)
 ExportDelivery exportDelivery(Ref ref) => createDelivery();
 
-/// The extract for [range], assembled but not yet delivered.
+/// The extract for [range] and [project], assembled but not yet delivered.
 ///
 /// Read once rather than watched: an export is a snapshot of a moment, and a
 /// preview that shifted under the Export button while you read it would be
 /// describing a different file from the one you got.
 @riverpod
-Future<CsvExport> rangeExport(Ref ref, ExportRange range) async {
+Future<CsvExport> rangeExport(
+  Ref ref,
+  ExportRange range,
+  ProjectFilter project,
+) async {
   final repository = ref.watch(timeEntryRepositoryProvider);
   final entries = await repository
       .watchEntriesInRange(range.from, range.to)
       .first;
   final activities = await repository.watchActivitiesById().first;
+  final projects = await repository.watchProjectsById().first;
   return buildCsv(
     entries: entries,
     activities: activities,
+    projects: projects,
+    project: project,
     fromUtc: range.from,
     toUtc: range.to,
     now: ref.watch(appClockProvider).nowUtc(),

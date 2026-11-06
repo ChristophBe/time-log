@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/history/history_screen.dart';
+import '../features/projects/projects_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/today/today_screen.dart';
 import 'shell.dart';
@@ -10,7 +11,7 @@ final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 /// Deep-linkable routes (SPEC §8).
 ///
-/// A stateful shell, so each of the three destinations keeps its own navigation
+/// A stateful shell, so each of the four destinations keeps its own navigation
 /// stack and its own scroll position: switching to History and back should land
 /// you on the day you were reading, not reset it.
 ///
@@ -48,6 +49,14 @@ GoRouter buildRouter({String? initialLocation}) => GoRouter(
         StatefulShellBranch(
           routes: <RouteBase>[
             GoRoute(path: '/history', builder: (_, _) => const HistoryScreen()),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: <RouteBase>[
+            GoRoute(
+              path: '/projects',
+              builder: (_, _) => const ProjectsScreen(),
+            ),
           ],
         ),
         StatefulShellBranch(

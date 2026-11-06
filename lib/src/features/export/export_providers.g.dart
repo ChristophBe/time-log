@@ -60,7 +60,7 @@ final class ExportDeliveryProvider
 
 String _$exportDeliveryHash() => r'053ff2e5bb7818722140f3c87c29622fbb18f2b9';
 
-/// The extract for [range], assembled but not yet delivered.
+/// The extract for [range] and [project], assembled but not yet delivered.
 ///
 /// Read once rather than watched: an export is a snapshot of a moment, and a
 /// preview that shifted under the Export button while you read it would be
@@ -69,7 +69,7 @@ String _$exportDeliveryHash() => r'053ff2e5bb7818722140f3c87c29622fbb18f2b9';
 @ProviderFor(rangeExport)
 final rangeExportProvider = RangeExportFamily._();
 
-/// The extract for [range], assembled but not yet delivered.
+/// The extract for [range] and [project], assembled but not yet delivered.
 ///
 /// Read once rather than watched: an export is a snapshot of a moment, and a
 /// preview that shifted under the Export button while you read it would be
@@ -83,14 +83,14 @@ final class RangeExportProvider
           FutureOr<CsvExport>
         >
     with $FutureModifier<CsvExport>, $FutureProvider<CsvExport> {
-  /// The extract for [range], assembled but not yet delivered.
+  /// The extract for [range] and [project], assembled but not yet delivered.
   ///
   /// Read once rather than watched: an export is a snapshot of a moment, and a
   /// preview that shifted under the Export button while you read it would be
   /// describing a different file from the one you got.
   RangeExportProvider._({
     required RangeExportFamily super.from,
-    required ExportRange super.argument,
+    required (ExportRange, ProjectFilter) super.argument,
   }) : super(
          retry: null,
          name: r'rangeExportProvider',
@@ -106,7 +106,7 @@ final class RangeExportProvider
   String toString() {
     return r'rangeExportProvider'
         ''
-        '($argument)';
+        '$argument';
   }
 
   @$internal
@@ -116,8 +116,8 @@ final class RangeExportProvider
 
   @override
   FutureOr<CsvExport> create(Ref ref) {
-    final argument = this.argument as ExportRange;
-    return rangeExport(ref, argument);
+    final argument = this.argument as (ExportRange, ProjectFilter);
+    return rangeExport(ref, argument.$1, argument.$2);
   }
 
   @override
@@ -131,16 +131,20 @@ final class RangeExportProvider
   }
 }
 
-String _$rangeExportHash() => r'31cd1271e1b9224a0f1d149408ab2e73e83725f6';
+String _$rangeExportHash() => r'd4fb79f34cbe676d9323a76b680afb2de56b2338';
 
-/// The extract for [range], assembled but not yet delivered.
+/// The extract for [range] and [project], assembled but not yet delivered.
 ///
 /// Read once rather than watched: an export is a snapshot of a moment, and a
 /// preview that shifted under the Export button while you read it would be
 /// describing a different file from the one you got.
 
 final class RangeExportFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<CsvExport>, ExportRange> {
+    with
+        $FunctionalFamilyOverride<
+          FutureOr<CsvExport>,
+          (ExportRange, ProjectFilter)
+        > {
   RangeExportFamily._()
     : super(
         retry: null,
@@ -150,14 +154,14 @@ final class RangeExportFamily extends $Family
         isAutoDispose: true,
       );
 
-  /// The extract for [range], assembled but not yet delivered.
+  /// The extract for [range] and [project], assembled but not yet delivered.
   ///
   /// Read once rather than watched: an export is a snapshot of a moment, and a
   /// preview that shifted under the Export button while you read it would be
   /// describing a different file from the one you got.
 
-  RangeExportProvider call(ExportRange range) =>
-      RangeExportProvider._(argument: range, from: this);
+  RangeExportProvider call(ExportRange range, ProjectFilter project) =>
+      RangeExportProvider._(argument: (range, project), from: this);
 
   @override
   String toString() => r'rangeExportProvider';
