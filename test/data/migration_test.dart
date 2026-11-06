@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' as raw_sqlite;
@@ -177,5 +177,60 @@ void main() {
     expect(settings.longRunMinutes, 240);
     expect(settings.trackActiveTime, 0);
     expect(await v2.select(v2.activeSessions).get(), isEmpty);
+  });
+
+  test('a v1 database arrives with every activity in no project', () async {
+    final activities = await db.select(db.activities).get();
+
+    expect(activities.single.projectId, isNull, reason: 'SPEC §6.12');
+    expect(await db.select(db.projects).get(), isEmpty);
+  });
+
+  test('a v3 database reaches v4, and projects work afterwards', () async {
+    final sqlite = raw_sqlite.sqlite3.openInMemory();
+    for (final statement in _v1Schema.split(';')) {
+      if (statement.trim().isEmpty) continue;
+      sqlite.execute(statement);
+    }
+    // v2 and v3 as their migrations wrote them.
+    for (final statement in <String>[
+      'ALTER TABLE settings_row ADD COLUMN '
+          'first_day_of_week INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE settings_row ADD COLUMN '
+          'long_run_minutes INTEGER NOT NULL DEFAULT 480',
+      'ALTER TABLE settings_row ADD COLUMN '
+          'track_active_time INTEGER NOT NULL DEFAULT 0',
+      'CREATE TABLE active_sessions (id TEXT NOT NULL PRIMARY KEY, '
+          'start_utc INTEGER NOT NULL, end_utc INTEGER, '
+          'last_seen_utc INTEGER NOT NULL, end_reason TEXT, '
+          'tz_name TEXT NOT NULL, created_at INTEGER NOT NULL, '
+          'updated_at INTEGER NOT NULL)',
+      'PRAGMA user_version = 3',
+      'INSERT INTO activities VALUES '
+          "('a1', 'Writing specs', 'writing specs', 0, 0, 1000, 1000)",
+    ]) {
+      sqlite.execute(statement);
+    }
+    final v3 = AppDatabase(NativeDatabase.opened(sqlite));
+    addTearDown(v3.close);
+
+    expect((await v3.select(v3.activities).getSingle()).projectId, isNull);
+
+    await v3.customStatement(
+      'INSERT INTO projects VALUES '
+      "('p1', 'Client A', 'client a', 1000, 1000)",
+    );
+    await v3.customStatement(
+      "UPDATE activities SET project_id = 'p1' WHERE id = 'a1'",
+    );
+    expect((await v3.select(v3.activities).getSingle()).projectId, 'p1');
+
+    // The column is a real foreign key, not just a string.
+    await expectLater(
+      v3.customStatement(
+        "UPDATE activities SET project_id = 'nowhere' WHERE id = 'a1'",
+      ),
+      throwsA(anything),
+    );
   });
 }

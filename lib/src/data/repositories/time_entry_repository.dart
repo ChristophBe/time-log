@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/backup/json_backup.dart';
 import '../../domain/models/activity.dart';
+import '../../domain/models/project.dart';
 import '../../domain/models/time_entry.dart';
 import '../../domain/timeline/day_rollover.dart';
 import '../../domain/timeline/day_window.dart';
@@ -44,6 +45,15 @@ class TimeEntryRepository {
       .watch()
       .map(
         (rows) => <String, Activity>{
+          for (final row in rows) row.id: row.toDomain(),
+        },
+      );
+
+  Stream<Map<String, Project>> watchProjectsById() => _db
+      .select(_db.projects)
+      .watch()
+      .map(
+        (rows) => <String, Project>{
           for (final row in rows) row.id: row.toDomain(),
         },
       );
@@ -118,11 +128,19 @@ class TimeEntryRepository {
   /// Deleted rows are part of a backup on purpose: without them a restore would
   /// resurrect everything you ever deleted, and a merge would have no way to
   /// know the deletion was the newer fact.
-  Future<({List<BackupActivity> activities, List<BackupEntry> entries})>
+  Future<
+    ({
+      List<BackupProject> projects,
+      List<BackupActivity> activities,
+      List<BackupEntry> entries,
+    })
+  >
   readForBackup() async {
+    final projects = await _db.select(_db.projects).get();
     final activities = await _db.select(_db.activities).get();
     final entries = await _db.select(_db.timeEntries).get();
     return (
+      projects: projects.map((row) => row.toBackup()).toList(),
       activities: activities.map((row) => row.toBackup()).toList(),
       entries: entries.map((row) => row.toBackup()).toList(),
     );

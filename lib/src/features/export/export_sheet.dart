@@ -7,6 +7,7 @@ import '../../app/design.dart';
 import '../../core/clock.dart';
 import '../../core/formatters.dart';
 import '../../domain/export/csv_export.dart';
+import '../../domain/models/project.dart';
 import '../today/action_feedback.dart';
 import '../today/today_providers.dart';
 import 'export_providers.dart';
@@ -45,6 +46,10 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
 
   /// Local dates, inclusive at both ends. Set by a preset or by the picker.
   ({DateTime first, DateTime last})? _custom;
+
+  /// Whose time the file covers (SPEC §8.6). Only offered once a project
+  /// exists.
+  ProjectFilter _project = const AllProjects();
 
   bool _sending = false;
 
@@ -116,7 +121,11 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
     });
   }
 
-  Future<void> _export(CsvExport csv) async {
+  Future<void> _export(
+    CsvExport csv,
+    ProjectFilter project,
+    String? projectName,
+  ) async {
     if (_sending) return;
     setState(() => _sending = true);
     final days = _days(context);
@@ -124,7 +133,12 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
       await ref
           .read(exportDeliveryProvider)
           .send(
-            fileName: csvFileName(firstDay: days.first, lastDay: days.last),
+            fileName: csvFileName(
+              firstDay: days.first,
+              lastDay: days.last,
+              project: project,
+              projectName: projectName,
+            ),
             text: csv.text,
             mimeType: 'text/csv',
           );
@@ -143,10 +157,31 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
   @override
   Widget build(BuildContext context) {
     final days = _days(context);
-    final export = ref.watch(rangeExportProvider(_range(context)));
+    final projects =
+        (ref.watch(projectsByIdProvider).value ?? const <String, Project>{})
+            .values
+            .toList()
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
+    // A project that was deleted while the sheet was open falls back to all.
+    final project = switch (_project) {
+      OnlyProject(:final projectId)
+          when !projects.any((p) => p.id == projectId) =>
+        const AllProjects(),
+      final other => other,
+    };
+    final projectName = switch (project) {
+      OnlyProject(:final projectId) =>
+        projects.firstWhere((p) => p.id == projectId).name,
+      NoProject() => 'No project',
+      AllProjects() => null,
+    };
+    final export = ref.watch(rangeExportProvider(_range(context), project));
 
     return SafeArea(
-      child: Padding(
+      // Scrolls, because the project chips grow with the project list.
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(Insets.lg, 0, Insets.lg, Insets.lg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -175,15 +210,36 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
                   ),
               ],
             ),
+            if (projects.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Insets.lg),
+              Text('Project', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: Insets.sm),
+              Wrap(
+                spacing: Insets.sm,
+                runSpacing: Insets.sm,
+                children: <Widget>[
+                  for (final (filter, label) in <(ProjectFilter, String)>[
+                    (const AllProjects(), 'All'),
+                    for (final p in projects) (OnlyProject(p.id), p.name),
+                    (const NoProject(), 'No project'),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: project == filter,
+                      onSelected: (_) => setState(() => _project = filter),
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: Insets.lg),
-            _Summary(days: days, export: export),
+            _Summary(days: days, project: projectName, export: export),
             const SizedBox(height: Insets.lg),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
                 onPressed: switch (export) {
                   AsyncData(:final value) when !value.isEmpty && !_sending =>
-                    () => _export(value),
+                    () => _export(value, project, projectName),
                   _ => null,
                 },
                 child: const Text('Export CSV'),
@@ -196,11 +252,19 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
   }
 }
 
-/// What you are about to get: the range, how many entries, how long.
+/// What you are about to get: the range, the project, how many entries, how
+/// long.
 class _Summary extends StatelessWidget {
-  const _Summary({required this.days, required this.export});
+  const _Summary({
+    required this.days,
+    required this.project,
+    required this.export,
+  });
 
   final ({DateTime first, DateTime last}) days;
+
+  /// The chosen project's name, or null for all of them.
+  final String? project;
   final AsyncValue<CsvExport> export;
 
   @override
@@ -222,6 +286,10 @@ class _Summary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(range, style: Theme.of(context).textTheme.titleSmall),
+          if (project != null) ...<Widget>[
+            const SizedBox(height: Insets.xs),
+            Text(project!, style: Theme.of(context).textTheme.bodyMedium),
+          ],
           const SizedBox(height: Insets.xs),
           Text(
             switch (export) {

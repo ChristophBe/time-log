@@ -9,6 +9,7 @@ import '../data/db/database_provider.dart';
 import '../data/db/mappers.dart';
 import 'backup/json_backup.dart';
 import 'models/activity.dart';
+import 'models/project.dart';
 import 'models/time_entry.dart';
 import 'timeline/continue_rule.dart';
 import 'timeline/day_rollover.dart';
@@ -49,6 +50,18 @@ class UndoNoLongerPossible implements Exception {
 
   @override
   String toString() => 'UndoNoLongerPossible: $reason';
+}
+
+/// Thrown when a project is renamed to a name another project has. Projects are
+/// never merged (SPEC §6.12), so this is a refusal rather than a choice.
+class ProjectNameTaken implements Exception {
+  const ProjectNameTaken(this.other);
+
+  /// The project that already has the name.
+  final Project other;
+
+  @override
+  String toString() => 'ProjectNameTaken: ${other.name}';
 }
 
 enum StartMode {
@@ -803,8 +816,23 @@ class TimelineWriter {
       // was removed by the merge.
       await _db.delete(_db.timeEntries).go();
       await _db.delete(_db.activities).go();
+      await _db.delete(_db.projects).go();
       await _db.delete(_db.activeSessions).go();
 
+      // Projects before activities, which point at them.
+      for (final project in plan.projectsToWrite) {
+        await _db
+            .into(_db.projects)
+            .insert(
+              ProjectsCompanion.insert(
+                id: project.id,
+                name: project.name,
+                nameKey: project.nameKey,
+                createdAt: toMillis(project.createdAt),
+                updatedAt: toMillis(project.updatedAt),
+              ),
+            );
+      }
       for (final activity in plan.activitiesToWrite) {
         await _db
             .into(_db.activities)
@@ -815,6 +843,7 @@ class TimelineWriter {
                 nameKey: activity.nameKey,
                 colorSeed: activity.colorSeed,
                 archived: Value(activity.archived ? 1 : 0),
+                projectId: Value(activity.projectId),
                 createdAt: toMillis(activity.createdAt),
                 updatedAt: toMillis(activity.updatedAt),
               ),
@@ -869,6 +898,7 @@ class TimelineWriter {
   Future<void> deleteAllData() => _db.transaction(() async {
     await _db.delete(_db.timeEntries).go();
     await _db.delete(_db.activities).go();
+    await _db.delete(_db.projects).go();
     await _db.delete(_db.activeSessions).go();
   });
 
@@ -989,6 +1019,174 @@ class TimelineWriter {
         ),
       );
     });
+  }
+
+  // --------------------------------------------------------------- projects
+
+  /// Finds the project called [name], or makes it (SPEC §6.12).
+  ///
+  /// The undo is null when the name already existed: nothing was written, so
+  /// there is nothing to take back.
+  Future<({Project project, UndoToken? undo})> createProject(
+    String name,
+  ) async {
+    if (!Project.isValidName(name)) {
+      throw ArgumentError.value(name, 'name', 'not a usable project name');
+    }
+    return _db.transaction(() async {
+      final key = Activity.keyFor(name);
+      final existing = await _findProjectByKey(key);
+      if (existing != null) return (project: existing.toDomain(), undo: null);
+
+      final now = _clock.nowUtc();
+      final project = Project(id: _ids.next(), name: name.trim());
+      await _db
+          .into(_db.projects)
+          .insert(
+            ProjectsCompanion.insert(
+              id: project.id,
+              name: project.name,
+              nameKey: key,
+              createdAt: toMillis(now),
+              updatedAt: toMillis(now),
+            ),
+          );
+      return (
+        project: project,
+        undo: UndoToken('Created ${project.name}', () async {
+          await _db.transaction(() async {
+            // Something may have been put in it since; it goes back to none
+            // rather than blocking the undo on the foreign key.
+            await _clearProject(project.id);
+            await (_db.delete(
+              _db.projects,
+            )..where((t) => t.id.equals(project.id))).go();
+          });
+        }),
+      );
+    });
+  }
+
+  /// Renames a project, refusing a name another project has (SPEC §6.12).
+  Future<UndoToken> renameProject({
+    required String projectId,
+    required String name,
+  }) async {
+    if (!Project.isValidName(name)) {
+      throw ArgumentError.value(name, 'name', 'not a usable project name');
+    }
+    return _db.transaction(() async {
+      final key = Activity.keyFor(name);
+      final before = await (_db.select(
+        _db.projects,
+      )..where((t) => t.id.equals(projectId))).getSingle();
+      final existing = await _findProjectByKey(key);
+      if (existing != null && existing.id != projectId) {
+        throw ProjectNameTaken(existing.toDomain());
+      }
+
+      await (_db.update(
+        _db.projects,
+      )..where((t) => t.id.equals(projectId))).write(
+        ProjectsCompanion(
+          name: Value(name.trim()),
+          nameKey: Value(key),
+          updatedAt: Value(toMillis(_clock.nowUtc())),
+        ),
+      );
+      return UndoToken('Renamed ${before.name}', () async {
+        await (_db.update(
+          _db.projects,
+        )..where((t) => t.id.equals(projectId))).write(
+          ProjectsCompanion(
+            name: Value(before.name),
+            nameKey: Value(before.nameKey),
+            updatedAt: Value(before.updatedAt),
+          ),
+        );
+      });
+    });
+  }
+
+  /// Deletes a project. Its activities go back to none; no entry is touched
+  /// (SPEC §6.12).
+  Future<UndoToken> deleteProject(String projectId) =>
+      _db.transaction(() async {
+        final before = await (_db.select(
+          _db.projects,
+        )..where((t) => t.id.equals(projectId))).getSingle();
+        // Read first so the undo knows which activities to put back — the ones
+        // this removed, not whatever is in no project by then.
+        final members = await (_db.select(
+          _db.activities,
+        )..where((t) => t.projectId.equals(projectId))).get();
+
+        await _clearProject(projectId);
+        await (_db.delete(
+          _db.projects,
+        )..where((t) => t.id.equals(projectId))).go();
+
+        return UndoToken('Deleted ${before.name}', () async {
+          await _db.transaction(() async {
+            await _db.into(_db.projects).insert(before);
+            for (final row in members) {
+              await (_db.update(
+                _db.activities,
+              )..where((t) => t.id.equals(row.id))).write(
+                ActivitiesCompanion(
+                  projectId: Value(projectId),
+                  updatedAt: Value(row.updatedAt),
+                ),
+              );
+            }
+          });
+        });
+      });
+
+  /// Puts an activity, and so its whole history, in [projectId], or in none
+  /// when it is null (SPEC §6.12). Null when it was already there.
+  Future<UndoToken?> setActivityProject({
+    required String activityId,
+    required String? projectId,
+  }) => _db.transaction(() async {
+    final before = await (_db.select(
+      _db.activities,
+    )..where((t) => t.id.equals(activityId))).getSingle();
+    if (before.projectId == projectId) return null;
+
+    await (_db.update(
+      _db.activities,
+    )..where((t) => t.id.equals(activityId))).write(
+      ActivitiesCompanion(
+        projectId: Value(projectId),
+        updatedAt: Value(toMillis(_clock.nowUtc())),
+      ),
+    );
+    return UndoToken('Moved ${before.name}', () async {
+      await (_db.update(
+        _db.activities,
+      )..where((t) => t.id.equals(activityId))).write(
+        ActivitiesCompanion(
+          projectId: Value(before.projectId),
+          updatedAt: Value(before.updatedAt),
+        ),
+      );
+    });
+  });
+
+  Future<ProjectRow?> _findProjectByKey(String key) => (_db.select(
+    _db.projects,
+  )..where((t) => t.nameKey.equals(key))).getSingleOrNull();
+
+  Future<void> _clearProject(String projectId) async {
+    await (_db.update(
+      _db.activities,
+    )..where((t) => t.projectId.equals(projectId))).write(
+      ActivitiesCompanion(
+        projectId: const Value(null),
+        updatedAt: Value(toMillis(_clock.nowUtc())),
+      ),
+    );
   }
 
   // ----------------------------------------------------------------- helpers

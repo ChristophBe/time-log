@@ -104,6 +104,7 @@ void main() {
     );
     when(() => harness.entryRepository.readForBackup()).thenAnswer(
       (_) async => (
+        projects: <BackupProject>[],
         activities: <BackupActivity>[backupActivity()],
         entries: <BackupEntry>[
           backupEntry(id: 'existing', start: DateTime.utc(2026, 3, 10, 9)),
@@ -129,7 +130,7 @@ void main() {
 
     expect(delivery.calls, 1);
     expect(delivery.fileName, 'time-log-backup-2026-03-11.json');
-    expect(delivery.text, contains('"formatVersion": 2'));
+    expect(delivery.text, contains('"formatVersion": 3'));
     expect(delivery.text, contains('Writing specs'));
   });
 

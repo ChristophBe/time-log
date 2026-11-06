@@ -8,12 +8,13 @@ import 'package:time_log/src/domain/models/time_entry.dart';
 import 'package:time_log/src/features/entry/entry_sheet.dart';
 import 'package:time_log/src/features/shortcuts/shortcuts_sheet.dart';
 import 'package:time_log/src/features/history/history_screen.dart';
+import 'package:time_log/src/features/projects/projects_screen.dart';
 import 'package:time_log/src/features/settings/settings_screen.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
 
 import '../support/pump_app.dart';
 
-/// SPEC §8: Today / History / Settings, and how each width reaches them.
+/// SPEC §8: Today / History / Projects / Settings, and how each width reaches them.
 void main() {
   final now = DateTime.utc(2026, 3, 11, 12);
 
@@ -81,6 +82,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(HistoryScreen), findsOneWidget);
 
+    await tester.tap(find.text('Projects'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProjectsScreen), findsOneWidget);
+
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
@@ -88,6 +93,20 @@ void main() {
     await tester.tap(find.text('Today'));
     await tester.pumpAndSettle();
     expect(find.byType(TodayScreen), findsOneWidget);
+  });
+
+  testWidgets('the rail reaches Projects too', (tester) async {
+    await pumpApp(tester, size: const Size(800, 900));
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Projects'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProjectsScreen), findsOneWidget);
   });
 
   testWidgets('a destination keeps its state across a switch', (tester) async {
