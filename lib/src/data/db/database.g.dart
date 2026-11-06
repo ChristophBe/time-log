@@ -444,17 +444,6 @@ class Activities extends Table with TableInfo<Activities, ActivityRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
-  static const VerificationMeta _projectIdMeta = const VerificationMeta(
-    'projectId',
-  );
-  late final GeneratedColumn<String> projectId = GeneratedColumn<String>(
-    'project_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    $customConstraints: 'REFERENCES projects(id)',
-  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -464,7 +453,6 @@ class Activities extends Table with TableInfo<Activities, ActivityRow> {
     archived,
     createdAt,
     updatedAt,
-    projectId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -529,12 +517,6 @@ class Activities extends Table with TableInfo<Activities, ActivityRow> {
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
-    if (data.containsKey('project_id')) {
-      context.handle(
-        _projectIdMeta,
-        projectId.isAcceptableOrUnknown(data['project_id']!, _projectIdMeta),
-      );
-    }
     return context;
   }
 
@@ -572,10 +554,6 @@ class Activities extends Table with TableInfo<Activities, ActivityRow> {
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
-      projectId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}project_id'],
-      ),
     );
   }
 
@@ -596,9 +574,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final int archived;
   final int createdAt;
   final int updatedAt;
-
-  /// Added in schema v4; NULL is "no project" (SPEC §6.12).
-  final String? projectId;
   const ActivityRow({
     required this.id,
     required this.name,
@@ -607,7 +582,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     required this.archived,
     required this.createdAt,
     required this.updatedAt,
-    this.projectId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -619,9 +593,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     map['archived'] = Variable<int>(archived);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
-    if (!nullToAbsent || projectId != null) {
-      map['project_id'] = Variable<String>(projectId);
-    }
     return map;
   }
 
@@ -634,9 +605,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       archived: Value(archived),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
-      projectId: projectId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(projectId),
     );
   }
 
@@ -653,7 +621,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       archived: serializer.fromJson<int>(json['archived']),
       createdAt: serializer.fromJson<int>(json['created_at']),
       updatedAt: serializer.fromJson<int>(json['updated_at']),
-      projectId: serializer.fromJson<String?>(json['project_id']),
     );
   }
   @override
@@ -667,7 +634,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'archived': serializer.toJson<int>(archived),
       'created_at': serializer.toJson<int>(createdAt),
       'updated_at': serializer.toJson<int>(updatedAt),
-      'project_id': serializer.toJson<String?>(projectId),
     };
   }
 
@@ -679,7 +645,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     int? archived,
     int? createdAt,
     int? updatedAt,
-    Value<String?> projectId = const Value.absent(),
   }) => ActivityRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -688,7 +653,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     archived: archived ?? this.archived,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
-    projectId: projectId.present ? projectId.value : this.projectId,
   );
   ActivityRow copyWithCompanion(ActivitiesCompanion data) {
     return ActivityRow(
@@ -699,7 +663,6 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       archived: data.archived.present ? data.archived.value : this.archived,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
-      projectId: data.projectId.present ? data.projectId.value : this.projectId,
     );
   }
 
@@ -712,23 +675,14 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('colorSeed: $colorSeed, ')
           ..write('archived: $archived, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('projectId: $projectId')
+          ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    name,
-    nameKey,
-    colorSeed,
-    archived,
-    createdAt,
-    updatedAt,
-    projectId,
-  );
+  int get hashCode =>
+      Object.hash(id, name, nameKey, colorSeed, archived, createdAt, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -739,8 +693,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.colorSeed == this.colorSeed &&
           other.archived == this.archived &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt &&
-          other.projectId == this.projectId);
+          other.updatedAt == this.updatedAt);
 }
 
 class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
@@ -751,7 +704,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<int> archived;
   final Value<int> createdAt;
   final Value<int> updatedAt;
-  final Value<String?> projectId;
   final Value<int> rowid;
   const ActivitiesCompanion({
     this.id = const Value.absent(),
@@ -761,7 +713,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.archived = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
-    this.projectId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ActivitiesCompanion.insert({
@@ -772,7 +723,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.archived = const Value.absent(),
     required int createdAt,
     required int updatedAt,
-    this.projectId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -788,7 +738,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<int>? archived,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
-    Expression<String>? projectId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -799,7 +748,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       if (archived != null) 'archived': archived,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
-      if (projectId != null) 'project_id': projectId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -812,7 +760,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Value<int>? archived,
     Value<int>? createdAt,
     Value<int>? updatedAt,
-    Value<String?>? projectId,
     Value<int>? rowid,
   }) {
     return ActivitiesCompanion(
@@ -823,7 +770,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       archived: archived ?? this.archived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      projectId: projectId ?? this.projectId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -852,9 +798,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
-    if (projectId.present) {
-      map['project_id'] = Variable<String>(projectId.value);
-    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -871,7 +814,6 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('archived: $archived, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('projectId: $projectId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -974,6 +916,17 @@ class TimeEntries extends Table with TableInfo<TimeEntries, TimeEntryRow> {
     requiredDuringInsert: false,
     $customConstraints: '',
   );
+  static const VerificationMeta _projectIdMeta = const VerificationMeta(
+    'projectId',
+  );
+  late final GeneratedColumn<String> projectId = GeneratedColumn<String>(
+    'project_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'REFERENCES projects(id)',
+  );
   static const VerificationMeta _isRunningMeta = const VerificationMeta(
     'isRunning',
   );
@@ -1002,6 +955,7 @@ class TimeEntries extends Table with TableInfo<TimeEntries, TimeEntryRow> {
     createdAt,
     updatedAt,
     deletedAt,
+    projectId,
     isRunning,
   ];
   @override
@@ -1079,6 +1033,12 @@ class TimeEntries extends Table with TableInfo<TimeEntries, TimeEntryRow> {
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('project_id')) {
+      context.handle(
+        _projectIdMeta,
+        projectId.isAcceptableOrUnknown(data['project_id']!, _projectIdMeta),
+      );
+    }
     if (data.containsKey('is_running')) {
       context.handle(
         _isRunningMeta,
@@ -1130,6 +1090,10 @@ class TimeEntries extends Table with TableInfo<TimeEntries, TimeEntryRow> {
         DriftSqlType.int,
         data['${effectivePrefix}deleted_at'],
       ),
+      projectId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}project_id'],
+      ),
       isRunning: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}is_running'],
@@ -1161,6 +1125,9 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
   final int updatedAt;
   final int? deletedAt;
 
+  /// Added in schema v4; NULL is "no project" (SPEC §6.12).
+  final String? projectId;
+
   /// 1 only while this row is the live running entry, NULL otherwise.
   final int? isRunning;
   const TimeEntryRow({
@@ -1173,6 +1140,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    this.projectId,
     this.isRunning,
   });
   @override
@@ -1193,6 +1161,9 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<int>(deletedAt);
     }
+    if (!nullToAbsent || projectId != null) {
+      map['project_id'] = Variable<String>(projectId);
+    }
     return map;
   }
 
@@ -1211,6 +1182,9 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      projectId: projectId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(projectId),
     );
   }
 
@@ -1229,6 +1203,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
       createdAt: serializer.fromJson<int>(json['created_at']),
       updatedAt: serializer.fromJson<int>(json['updated_at']),
       deletedAt: serializer.fromJson<int?>(json['deleted_at']),
+      projectId: serializer.fromJson<String?>(json['project_id']),
       isRunning: serializer.fromJson<int?>(json['is_running']),
     );
   }
@@ -1245,6 +1220,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
       'created_at': serializer.toJson<int>(createdAt),
       'updated_at': serializer.toJson<int>(updatedAt),
       'deleted_at': serializer.toJson<int?>(deletedAt),
+      'project_id': serializer.toJson<String?>(projectId),
       'is_running': serializer.toJson<int?>(isRunning),
     };
   }
@@ -1259,6 +1235,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
     int? createdAt,
     int? updatedAt,
     Value<int?> deletedAt = const Value.absent(),
+    Value<String?> projectId = const Value.absent(),
     Value<int?> isRunning = const Value.absent(),
   }) => TimeEntryRow(
     id: id ?? this.id,
@@ -1270,6 +1247,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    projectId: projectId.present ? projectId.value : this.projectId,
     isRunning: isRunning.present ? isRunning.value : this.isRunning,
   );
   @override
@@ -1284,6 +1262,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('projectId: $projectId, ')
           ..write('isRunning: $isRunning')
           ..write(')'))
         .toString();
@@ -1300,6 +1279,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
     createdAt,
     updatedAt,
     deletedAt,
+    projectId,
     isRunning,
   );
   @override
@@ -1315,6 +1295,7 @@ class TimeEntryRow extends DataClass implements Insertable<TimeEntryRow> {
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
+          other.projectId == this.projectId &&
           other.isRunning == this.isRunning);
 }
 
@@ -1328,6 +1309,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int?> deletedAt;
+  final Value<String?> projectId;
   final Value<int> rowid;
   const TimeEntriesCompanion({
     this.id = const Value.absent(),
@@ -1339,6 +1321,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.projectId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TimeEntriesCompanion.insert({
@@ -1351,6 +1334,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
     required int createdAt,
     required int updatedAt,
     this.deletedAt = const Value.absent(),
+    this.projectId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        activityId = Value(activityId),
@@ -1368,6 +1352,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? deletedAt,
+    Expression<String>? projectId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1380,6 +1365,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (projectId != null) 'project_id': projectId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1394,6 +1380,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int?>? deletedAt,
+    Value<String?>? projectId,
     Value<int>? rowid,
   }) {
     return TimeEntriesCompanion(
@@ -1406,6 +1393,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      projectId: projectId ?? this.projectId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1440,6 +1428,9 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<int>(deletedAt.value);
     }
+    if (projectId.present) {
+      map['project_id'] = Variable<String>(projectId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1458,6 +1449,7 @@ class TimeEntriesCompanion extends UpdateCompanion<TimeEntryRow> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('projectId: $projectId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2657,13 +2649,39 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 
   Selectable<ActivityUsageSinceResult> activityUsageSince(int since) {
     return customSelect(
-      'SELECT"a"."id" AS "nested_0.id", "a"."name" AS "nested_0.name", "a"."name_key" AS "nested_0.name_key", "a"."color_seed" AS "nested_0.color_seed", "a"."archived" AS "nested_0.archived", "a"."created_at" AS "nested_0.created_at", "a"."updated_at" AS "nested_0.updated_at", "a"."project_id" AS "nested_0.project_id", e.start_utc AS used_at FROM activities AS a INNER JOIN time_entries AS e ON e.activity_id = a.id WHERE a.archived = 0 AND e.deleted_at IS NULL AND e.start_utc >= ?1',
+      'SELECT"a"."id" AS "nested_0.id", "a"."name" AS "nested_0.name", "a"."name_key" AS "nested_0.name_key", "a"."color_seed" AS "nested_0.color_seed", "a"."archived" AS "nested_0.archived", "a"."created_at" AS "nested_0.created_at", "a"."updated_at" AS "nested_0.updated_at", e.start_utc AS used_at FROM activities AS a INNER JOIN time_entries AS e ON e.activity_id = a.id WHERE a.archived = 0 AND e.deleted_at IS NULL AND e.start_utc >= ?1',
       variables: [Variable<int>(since)],
       readsFrom: {this.timeEntries, this.activities},
     ).asyncMap(
       (QueryRow row) async => ActivityUsageSinceResult(
         a: await this.activities.mapFromRow(row, tablePrefix: 'nested_0'),
         usedAt: row.read<int>('used_at'),
+      ),
+    );
+  }
+
+  Selectable<LatestProjectByActivityResult> latestProjectByActivity() {
+    return customSelect(
+      'SELECT e.activity_id, e.project_id FROM time_entries AS e WHERE e.deleted_at IS NULL AND e.start_utc = (SELECT MAX(x.start_utc) FROM time_entries AS x WHERE x.activity_id = e.activity_id AND x.deleted_at IS NULL)',
+      variables: [],
+      readsFrom: {this.timeEntries},
+    ).map(
+      (QueryRow row) => LatestProjectByActivityResult(
+        activityId: row.read<String>('activity_id'),
+        projectId: row.readNullable<String>('project_id'),
+      ),
+    );
+  }
+
+  Selectable<ProjectActivityPairsResult> projectActivityPairs() {
+    return customSelect(
+      'SELECT DISTINCT project_id, activity_id FROM time_entries WHERE deleted_at IS NULL AND project_id IS NOT NULL',
+      variables: [],
+      readsFrom: {this.timeEntries},
+    ).map(
+      (QueryRow row) => ProjectActivityPairsResult(
+        projectId: row.readNullable<String>('project_id'),
+        activityId: row.read<String>('activity_id'),
       ),
     );
   }
@@ -2731,19 +2749,19 @@ final class $ProjectsReferences
     extends BaseReferences<_$AppDatabase, Projects, ProjectRow> {
   $ProjectsReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static MultiTypedResultKey<Activities, List<ActivityRow>>
-  _activitiesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
-    db.activities,
-    aliasName: 'projects__id__activities__project_id',
+  static MultiTypedResultKey<TimeEntries, List<TimeEntryRow>>
+  _timeEntriesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.timeEntries,
+    aliasName: 'projects__id__time_entries__project_id',
   );
 
-  $ActivitiesProcessedTableManager get activitiesRefs {
-    final manager = $ActivitiesTableManager(
+  $TimeEntriesProcessedTableManager get timeEntriesRefs {
+    final manager = $TimeEntriesTableManager(
       $_db,
-      $_db.activities,
+      $_db.timeEntries,
     ).filter((f) => f.projectId.id.sqlEquals($_itemColumn<String>('id')!));
 
-    final cache = $_typedResult.readTableOrNull(_activitiesRefsTable($_db));
+    final cache = $_typedResult.readTableOrNull(_timeEntriesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -2783,22 +2801,22 @@ class $ProjectsFilterComposer extends Composer<_$AppDatabase, Projects> {
     builder: (column) => ColumnFilters(column),
   );
 
-  Expression<bool> activitiesRefs(
-    Expression<bool> Function($ActivitiesFilterComposer f) f,
+  Expression<bool> timeEntriesRefs(
+    Expression<bool> Function($TimeEntriesFilterComposer f) f,
   ) {
-    final $ActivitiesFilterComposer composer = $composerBuilder(
+    final $TimeEntriesFilterComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.activities,
+      referencedTable: $db.timeEntries,
       getReferencedColumn: (t) => t.projectId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $ActivitiesFilterComposer(
+          }) => $TimeEntriesFilterComposer(
             $db: $db,
-            $table: $db.activities,
+            $table: $db.timeEntries,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2866,22 +2884,22 @@ class $ProjectsAnnotationComposer extends Composer<_$AppDatabase, Projects> {
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
-  Expression<T> activitiesRefs<T extends Object>(
-    Expression<T> Function($ActivitiesAnnotationComposer a) f,
+  Expression<T> timeEntriesRefs<T extends Object>(
+    Expression<T> Function($TimeEntriesAnnotationComposer a) f,
   ) {
-    final $ActivitiesAnnotationComposer composer = $composerBuilder(
+    final $TimeEntriesAnnotationComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.activities,
+      referencedTable: $db.timeEntries,
       getReferencedColumn: (t) => t.projectId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $ActivitiesAnnotationComposer(
+          }) => $TimeEntriesAnnotationComposer(
             $db: $db,
-            $table: $db.activities,
+            $table: $db.timeEntries,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2905,7 +2923,7 @@ class $ProjectsTableManager
           $ProjectsUpdateCompanionBuilder,
           (ProjectRow, $ProjectsReferences),
           ProjectRow,
-          PrefetchHooks Function({bool activitiesRefs})
+          PrefetchHooks Function({bool timeEntriesRefs})
         > {
   $ProjectsTableManager(_$AppDatabase db, Projects table)
     : super(
@@ -2958,25 +2976,24 @@ class $ProjectsTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({activitiesRefs = false}) {
+          prefetchHooksCallback: ({timeEntriesRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [if (activitiesRefs) db.activities],
+              explicitlyWatchedTables: [if (timeEntriesRefs) db.timeEntries],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
                 return [
-                  if (activitiesRefs)
+                  if (timeEntriesRefs)
                     await $_getPrefetchedData<
                       ProjectRow,
                       Projects,
-                      ActivityRow
+                      TimeEntryRow
                     >(
                       currentTable: table,
-                      referencedTable: $ProjectsReferences._activitiesRefsTable(
-                        db,
-                      ),
+                      referencedTable: $ProjectsReferences
+                          ._timeEntriesRefsTable(db),
                       managerFromTypedResult: (p0) =>
-                          $ProjectsReferences(db, table, p0).activitiesRefs,
+                          $ProjectsReferences(db, table, p0).timeEntriesRefs,
                       referencedItemsForCurrentItem: (item, referencedItems) =>
                           referencedItems.where((e) => e.projectId == item.id),
                       typedResults: items,
@@ -3001,7 +3018,7 @@ typedef $ProjectsProcessedTableManager =
       $ProjectsUpdateCompanionBuilder,
       (ProjectRow, $ProjectsReferences),
       ProjectRow,
-      PrefetchHooks Function({bool activitiesRefs})
+      PrefetchHooks Function({bool timeEntriesRefs})
     >;
 typedef $ActivitiesCreateCompanionBuilder = ActivitiesCompanion Function({
   required String id,
@@ -3011,7 +3028,6 @@ typedef $ActivitiesCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<int> archived,
   required int createdAt,
   required int updatedAt,
-  Value<String?> projectId,
   Value<int> rowid,
 });
 typedef $ActivitiesUpdateCompanionBuilder = ActivitiesCompanion Function({
@@ -3022,30 +3038,12 @@ typedef $ActivitiesUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<int> archived,
   Value<int> createdAt,
   Value<int> updatedAt,
-  Value<String?> projectId,
   Value<int> rowid,
 });
 
 final class $ActivitiesReferences
     extends BaseReferences<_$AppDatabase, Activities, ActivityRow> {
   $ActivitiesReferences(super.$_db, super.$_table, super.$_typedResult);
-
-  static Projects _projectIdTable(_$AppDatabase db) =>
-      db.projects.createAlias('activities__project_id__projects__id');
-
-  $ProjectsProcessedTableManager? get projectId {
-    final $_column = $_itemColumn<String>('project_id');
-    if ($_column == null) return null;
-    final manager = $ProjectsTableManager(
-      $_db,
-      $_db.projects,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_projectIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
 
   static MultiTypedResultKey<TimeEntries, List<TimeEntryRow>>
   _timeEntriesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
@@ -3108,29 +3106,6 @@ class $ActivitiesFilterComposer extends Composer<_$AppDatabase, Activities> {
     column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
-
-  $ProjectsFilterComposer get projectId {
-    final $ProjectsFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.projectId,
-      referencedTable: $db.projects,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $ProjectsFilterComposer(
-            $db: $db,
-            $table: $db.projects,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
 
   Expression<bool> timeEntriesRefs(
     Expression<bool> Function($TimeEntriesFilterComposer f) f,
@@ -3200,29 +3175,6 @@ class $ActivitiesOrderingComposer extends Composer<_$AppDatabase, Activities> {
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
-
-  $ProjectsOrderingComposer get projectId {
-    final $ProjectsOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.projectId,
-      referencedTable: $db.projects,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $ProjectsOrderingComposer(
-            $db: $db,
-            $table: $db.projects,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
 }
 
 class $ActivitiesAnnotationComposer
@@ -3254,29 +3206,6 @@ class $ActivitiesAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
-
-  $ProjectsAnnotationComposer get projectId {
-    final $ProjectsAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.projectId,
-      referencedTable: $db.projects,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $ProjectsAnnotationComposer(
-            $db: $db,
-            $table: $db.projects,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
 
   Expression<T> timeEntriesRefs<T extends Object>(
     Expression<T> Function($TimeEntriesAnnotationComposer a) f,
@@ -3317,7 +3246,7 @@ class $ActivitiesTableManager
           $ActivitiesUpdateCompanionBuilder,
           (ActivityRow, $ActivitiesReferences),
           ActivityRow,
-          PrefetchHooks Function({bool projectId, bool timeEntriesRefs})
+          PrefetchHooks Function({bool timeEntriesRefs})
         > {
   $ActivitiesTableManager(_$AppDatabase db, Activities table)
     : super(
@@ -3339,7 +3268,6 @@ class $ActivitiesTableManager
                 Value<int> archived = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
-                Value<String?> projectId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivitiesCompanion(
                 id: id,
@@ -3349,7 +3277,6 @@ class $ActivitiesTableManager
                 archived: archived,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
-                projectId: projectId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3361,7 +3288,6 @@ class $ActivitiesTableManager
                 Value<int> archived = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
-                Value<String?> projectId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivitiesCompanion.insert(
                 id: id,
@@ -3371,7 +3297,6 @@ class $ActivitiesTableManager
                 archived: archived,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
-                projectId: projectId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3382,69 +3307,32 @@ class $ActivitiesTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({projectId = false, timeEntriesRefs = false}) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (timeEntriesRefs) db.timeEntries,
-                  ],
-                  addJoins:
-                      <
-                        T extends TableManagerState<
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic
-                        >
-                      >(state) {
-                        if (projectId) {
-                          state = state.withJoin(
-                            currentTable: table,
-                            currentColumn: table.projectId,
-                            referencedTable: $ActivitiesReferences
-                                ._projectIdTable(db),
-                            referencedColumn: $ActivitiesReferences
-                                ._projectIdTable(db)
-                                .id,
-                          ) as T;
-                        }
-
-                        return state;
-                      },
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (timeEntriesRefs)
-                        await $_getPrefetchedData<
-                          ActivityRow,
-                          Activities,
-                          TimeEntryRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $ActivitiesReferences
-                              ._timeEntriesRefsTable(db),
-                          managerFromTypedResult: (p0) => $ActivitiesReferences(
-                            db,
-                            table,
-                            p0,
-                          ).timeEntriesRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.activityId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
+          prefetchHooksCallback: ({timeEntriesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (timeEntriesRefs) db.timeEntries],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (timeEntriesRefs)
+                    await $_getPrefetchedData<
+                      ActivityRow,
+                      Activities,
+                      TimeEntryRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $ActivitiesReferences
+                          ._timeEntriesRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $ActivitiesReferences(db, table, p0).timeEntriesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.activityId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -3461,7 +3349,7 @@ typedef $ActivitiesProcessedTableManager =
       $ActivitiesUpdateCompanionBuilder,
       (ActivityRow, $ActivitiesReferences),
       ActivityRow,
-      PrefetchHooks Function({bool projectId, bool timeEntriesRefs})
+      PrefetchHooks Function({bool timeEntriesRefs})
     >;
 typedef $TimeEntriesCreateCompanionBuilder = TimeEntriesCompanion Function({
   required String id,
@@ -3473,6 +3361,7 @@ typedef $TimeEntriesCreateCompanionBuilder = TimeEntriesCompanion Function({
   required int createdAt,
   required int updatedAt,
   Value<int?> deletedAt,
+  Value<String?> projectId,
   Value<int> rowid,
 });
 typedef $TimeEntriesUpdateCompanionBuilder = TimeEntriesCompanion Function({
@@ -3485,6 +3374,7 @@ typedef $TimeEntriesUpdateCompanionBuilder = TimeEntriesCompanion Function({
   Value<int> createdAt,
   Value<int> updatedAt,
   Value<int?> deletedAt,
+  Value<String?> projectId,
   Value<int> rowid,
 });
 
@@ -3503,6 +3393,23 @@ final class $TimeEntriesReferences
       $_db.activities,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_activityIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static Projects _projectIdTable(_$AppDatabase db) =>
+      db.projects.createAlias('time_entries__project_id__projects__id');
+
+  $ProjectsProcessedTableManager? get projectId {
+    final $_column = $_itemColumn<String>('project_id');
+    if ($_column == null) return null;
+    final manager = $ProjectsTableManager(
+      $_db,
+      $_db.projects,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_projectIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -3577,6 +3484,29 @@ class $TimeEntriesFilterComposer extends Composer<_$AppDatabase, TimeEntries> {
           }) => $ActivitiesFilterComposer(
             $db: $db,
             $table: $db.activities,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $ProjectsFilterComposer get projectId {
+    final $ProjectsFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.projectId,
+      referencedTable: $db.projects,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $ProjectsFilterComposer(
+            $db: $db,
+            $table: $db.projects,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -3663,6 +3593,29 @@ class $TimeEntriesOrderingComposer
     );
     return composer;
   }
+
+  $ProjectsOrderingComposer get projectId {
+    final $ProjectsOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.projectId,
+      referencedTable: $db.projects,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $ProjectsOrderingComposer(
+            $db: $db,
+            $table: $db.projects,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $TimeEntriesAnnotationComposer
@@ -3723,6 +3676,29 @@ class $TimeEntriesAnnotationComposer
     );
     return composer;
   }
+
+  $ProjectsAnnotationComposer get projectId {
+    final $ProjectsAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.projectId,
+      referencedTable: $db.projects,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $ProjectsAnnotationComposer(
+            $db: $db,
+            $table: $db.projects,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $TimeEntriesTableManager
@@ -3738,7 +3714,7 @@ class $TimeEntriesTableManager
           $TimeEntriesUpdateCompanionBuilder,
           (TimeEntryRow, $TimeEntriesReferences),
           TimeEntryRow,
-          PrefetchHooks Function({bool activityId})
+          PrefetchHooks Function({bool activityId, bool projectId})
         > {
   $TimeEntriesTableManager(_$AppDatabase db, TimeEntries table)
     : super(
@@ -3762,6 +3738,7 @@ class $TimeEntriesTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
+                Value<String?> projectId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimeEntriesCompanion(
                 id: id,
@@ -3773,6 +3750,7 @@ class $TimeEntriesTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                projectId: projectId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3786,6 +3764,7 @@ class $TimeEntriesTableManager
                 required int createdAt,
                 required int updatedAt,
                 Value<int?> deletedAt = const Value.absent(),
+                Value<String?> projectId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimeEntriesCompanion.insert(
                 id: id,
@@ -3797,6 +3776,7 @@ class $TimeEntriesTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                projectId: projectId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3807,7 +3787,7 @@ class $TimeEntriesTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({activityId = false}) {
+          prefetchHooksCallback: ({activityId = false, projectId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -3838,6 +3818,18 @@ class $TimeEntriesTableManager
                             .id,
                       ) as T;
                     }
+                    if (projectId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.projectId,
+                        referencedTable: $TimeEntriesReferences._projectIdTable(
+                          db,
+                        ),
+                        referencedColumn: $TimeEntriesReferences
+                            ._projectIdTable(db)
+                            .id,
+                      ) as T;
+                    }
 
                     return state;
                   },
@@ -3862,7 +3854,7 @@ typedef $TimeEntriesProcessedTableManager =
       $TimeEntriesUpdateCompanionBuilder,
       (TimeEntryRow, $TimeEntriesReferences),
       TimeEntryRow,
-      PrefetchHooks Function({bool activityId})
+      PrefetchHooks Function({bool activityId, bool projectId})
     >;
 typedef $SettingsRowCreateCompanionBuilder = SettingsRowCompanion Function({
   Value<int> id,
@@ -4455,4 +4447,16 @@ class ActivityUsageSinceResult {
   final ActivityRow a;
   final int usedAt;
   ActivityUsageSinceResult({required this.a, required this.usedAt});
+}
+
+class LatestProjectByActivityResult {
+  final String activityId;
+  final String? projectId;
+  LatestProjectByActivityResult({required this.activityId, this.projectId});
+}
+
+class ProjectActivityPairsResult {
+  final String? projectId;
+  final String activityId;
+  ProjectActivityPairsResult({this.projectId, required this.activityId});
 }

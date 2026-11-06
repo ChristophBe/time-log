@@ -27,9 +27,8 @@ class CsvExport {
 sealed class ProjectFilter {
   const ProjectFilter();
 
-  /// Whether an entry of [activity] belongs in the file. An entry whose
-  /// activity cannot be found is in no project.
-  bool matches(Activity? activity);
+  /// Whether [entry] belongs in the file.
+  bool matches(TimeEntry entry);
 }
 
 /// Everything, whatever project it is in.
@@ -37,7 +36,7 @@ class AllProjects extends ProjectFilter {
   const AllProjects();
 
   @override
-  bool matches(Activity? activity) => true;
+  bool matches(TimeEntry entry) => true;
 
   @override
   bool operator ==(Object other) => other is AllProjects;
@@ -46,12 +45,12 @@ class AllProjects extends ProjectFilter {
   int get hashCode => (AllProjects).hashCode;
 }
 
-/// Only activities in no project.
+/// Only entries in no project.
 class NoProject extends ProjectFilter {
   const NoProject();
 
   @override
-  bool matches(Activity? activity) => activity?.projectId == null;
+  bool matches(TimeEntry entry) => entry.projectId == null;
 
   @override
   bool operator ==(Object other) => other is NoProject;
@@ -60,14 +59,14 @@ class NoProject extends ProjectFilter {
   int get hashCode => (NoProject).hashCode;
 }
 
-/// Only the activities of one project.
+/// Only the entries of one project.
 class OnlyProject extends ProjectFilter {
   const OnlyProject(this.projectId);
 
   final String projectId;
 
   @override
-  bool matches(Activity? activity) => activity?.projectId == projectId;
+  bool matches(TimeEntry entry) => entry.projectId == projectId;
 
   @override
   bool operator ==(Object other) =>
@@ -114,7 +113,7 @@ const List<String> csvColumns = <String>[
 /// `*_local` columns are `YYYY-MM-DD HH:MM`, whatever the 12/24-hour display
 /// setting says: a file is not a screen.
 ///
-/// [project] narrows the file to one project's activities (SPEC §8.6); the
+/// [project] narrows the file to one project's entries (SPEC §8.6); the
 /// count and total then describe only the rows that were kept.
 CsvExport buildCsv({
   required Iterable<TimeEntry> entries,
@@ -132,8 +131,8 @@ CsvExport buildCsv({
     ..sort((a, b) => a.startUtc.compareTo(b.startUtc));
 
   for (final entry in ordered) {
+    if (!project.matches(entry)) continue;
     final activity = activities[entry.activityId];
-    if (!project.matches(activity)) continue;
     final span = clipToWindow(entry, from: fromUtc, to: toUtc, now: now);
     if (span == null) continue;
 
@@ -148,7 +147,7 @@ CsvExport buildCsv({
       _row(<String>[
         entry.id,
         activity?.name ?? '',
-        projects[activity?.projectId]?.name ?? '',
+        projects[entry.projectId]?.name ?? '',
         entry.note ?? '',
         _localStamp(span.start),
         open ? '' : _localStamp(span.end),

@@ -85,6 +85,17 @@ Stream<Map<String, Activity>> activitiesById(Ref ref) =>
 Stream<Map<String, Project>> projectsById(Ref ref) =>
     ref.watch(timeEntryRepositoryProvider).watchProjectsById();
 
+/// Each activity's most recent project, for the composer's default
+/// (SPEC §6.12).
+@riverpod
+Stream<Map<String, String?>> latestProjectByActivity(Ref ref) =>
+    ref.watch(timeEntryRepositoryProvider).watchLatestProjectByActivity();
+
+/// The activities each project has been logged under (SPEC §8.7).
+@riverpod
+Stream<Map<String, Set<String>>> projectActivityIds(Ref ref) =>
+    ref.watch(timeEntryRepositoryProvider).watchProjectActivityIds();
+
 /// Entries touching the selected day, oldest first. An entry crossing midnight
 /// appears here for both days it touches (SPEC §5.3).
 @riverpod

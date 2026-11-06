@@ -54,7 +54,7 @@ platform to Android, so the suite is the Material path by default and
 | History, grouped by day, searchable by name and note | Week view, per-activity reports (P6) |
 | JSON backup and import, with a dry run before anything changes | Tags, sync (P6) |
 | Exporting a date range as CSV, for everything or one project | |
-| Projects: grouping activities, from their own destination | |
+| Projects per entry: chosen when starting or switching (latest by default), changeable while running | |
 | Filling a gap, splitting where you choose, the long-run banner | |
 | Renaming, recolouring and merging activities | |
 | Settings: snap, clock, theme, week start, day height, continue window, long-run threshold | |

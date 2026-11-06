@@ -19,9 +19,7 @@ CREATE TABLE activities (
   color_seed INTEGER NOT NULL,
   archived   INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  -- Added in schema v4; NULL is "no project" (SPEC §6.12).
-  project_id TEXT    REFERENCES projects(id)
+  updated_at INTEGER NOT NULL
 ) AS ActivityRow;
 
 CREATE TABLE time_entries (
@@ -34,6 +32,8 @@ CREATE TABLE time_entries (
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   deleted_at  INTEGER,
+  -- Added in schema v4; NULL is "no project" (SPEC §6.12).
+  project_id  TEXT    REFERENCES projects(id),
   -- 1 only while this row is the live running entry, NULL otherwise.
   is_running  INTEGER GENERATED ALWAYS AS (
                 CASE WHEN end_utc IS NULL AND deleted_at IS NULL THEN 1 END) VIRTUAL,
@@ -110,6 +110,21 @@ activityUsageSince:
   FROM activities a
   INNER JOIN time_entries e ON e.activity_id = a.id
   WHERE a.archived = 0 AND e.deleted_at IS NULL AND e.start_utc >= :since;
+
+-- Each activity with the project of its newest entry, NULL included, so the
+-- composer can default to it (SPEC §6.12).
+latestProjectByActivity:
+  SELECT e.activity_id, e.project_id
+  FROM time_entries e
+  WHERE e.deleted_at IS NULL
+    AND e.start_utc = (SELECT MAX(x.start_utc) FROM time_entries x
+                       WHERE x.activity_id = e.activity_id
+                         AND x.deleted_at IS NULL);
+
+-- Which activities have been logged under which project (SPEC §8.7).
+projectActivityPairs:
+  SELECT DISTINCT project_id, activity_id FROM time_entries
+  WHERE deleted_at IS NULL AND project_id IS NOT NULL;
 
 -- Sessions overlapping the half-open window [:rangeStart, :rangeEnd), oldest first.
 sessionsInRange:

@@ -32,17 +32,13 @@ void main() {
     now: h.now,
   );
 
-  test('a project export holds its activities and nothing else', () async {
-    final specs = await h.writer.startByName(name: 'Writing specs');
+  test('a project export holds its entries and nothing else', () async {
+    final client = (await h.writer.createProject('Client A')).project;
+    await h.writer.startByName(name: 'Writing specs', projectId: client.id);
     h.clock.advance(const Duration(minutes: 90));
     await h.writer.startByName(name: 'Email');
     h.clock.advance(const Duration(minutes: 30));
     await h.writer.stop();
-    final client = (await h.writer.createProject('Client A')).project;
-    await h.writer.setActivityProject(
-      activityId: (await h.byId(specs.entryId)).activityId,
-      projectId: client.id,
-    );
 
     final from = DateTime.utc(2026, 3, 10);
     final to = DateTime.utc(2026, 3, 11);

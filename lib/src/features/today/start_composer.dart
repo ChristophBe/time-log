@@ -12,8 +12,10 @@ import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
+import '../../domain/models/project.dart';
 import '../entry/activity_suggestion_row.dart';
 import '../entry/suggestion_keyboard.dart';
+import '../projects/project_chip.dart';
 import 'start_action.dart';
 import 'today_providers.dart';
 
@@ -27,7 +29,8 @@ class StartComposerState {
   StartComposerState()
     : text = TextEditingController(),
       focus = FocusNode(debugLabel: 'start composer'),
-      highlighted = ValueNotifier<int>(-1);
+      highlighted = ValueNotifier<int>(-1),
+      pickedProject = ValueNotifier<({String? id})?>(null);
 
   final TextEditingController text;
   final FocusNode focus;
@@ -35,9 +38,13 @@ class StartComposerState {
   /// Which suggestion Enter would pick. -1 means "use what is typed".
   final ValueNotifier<int> highlighted;
 
-  /// Rebuilds anything that cares about any of the three.
+  /// The project chosen in the chip, or null while the default applies
+  /// (SPEC §6.12). Wrapped, because "No project" is a choice too.
+  final ValueNotifier<({String? id})?> pickedProject;
+
+  /// Rebuilds anything that cares about any of them.
   Listenable get listenable =>
-      Listenable.merge(<Listenable>[text, focus, highlighted]);
+      Listenable.merge(<Listenable>[text, focus, highlighted, pickedProject]);
 
   /// The suggestion panel is only worth its space once the user has shown
   /// interest; at rest the day gets the screen.
@@ -47,15 +54,24 @@ class StartComposerState {
 
   String get typedName => text.text.trim();
 
+  /// The project starting [name] would use: the one picked, or else the
+  /// latest one (SPEC §6.12).
+  String? projectFor(WidgetRef ref, String name) {
+    final picked = pickedProject.value;
+    return picked != null ? picked.id : defaultProjectFromRef(ref, name);
+  }
+
   void reset() {
     text.clear();
     highlighted.value = -1;
+    pickedProject.value = null;
   }
 
   void dispose() {
     text.dispose();
     focus.dispose();
     highlighted.dispose();
+    pickedProject.dispose();
   }
 }
 
@@ -96,12 +112,14 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
   Future<void> _start(String name) async {
     if (_starting) return;
     _starting = true;
+    // Resolved before the reset below, which forgets the pick.
+    final projectId = _state.projectFor(ref, name);
     // Reset first: the field should be empty the instant it is committed, not
     // after the write round-trips.
     _state.reset();
     widget.onRelease();
     try {
-      await startActivityNamed(context, ref, name);
+      await startActivityNamed(context, ref, name, projectId: projectId);
     } finally {
       _starting = false;
     }
@@ -137,6 +155,17 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
           ref.watch(activitySuggestionsProvider(_state.query)).value ??
           const <ActivitySuggestion>[];
       final canStart = Activity.isValidName(_state.text.text);
+      final projects =
+          ref.watch(projectsByIdProvider).value ?? const <String, Project>{};
+      // What Enter would start, so the chip shows the project it would get.
+      final highlighted = _state.highlighted.value;
+      final target = highlighted >= 0 && highlighted < suggestions.length
+          ? suggestions[highlighted].activity.name
+          : _state.typedName;
+      final picked = _state.pickedProject.value;
+      final shownProject = picked != null
+          ? picked.id
+          : defaultProjectFromRef(ref, target, watch: true);
 
       return Shortcuts(
         // TodayScreen binds bare T and the horizontal arrows to day navigation
@@ -204,6 +233,18 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
                         ),
                       ),
                     ),
+                    // Only once there is a project to choose: without one the
+                    // composer stays a name and a button (SPEC §8.3).
+                    if (projects.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 160),
+                        child: ProjectChip(
+                          projectId: shownProject,
+                          projects: projects,
+                          onChanged: (id) =>
+                              _state.pickedProject.value = (id: id),
+                        ),
+                      ),
                     const SizedBox(width: Insets.sm),
                     // Pressing Start on a name that matches nothing creates it,
                     // so creation is never a mode (SPEC §8.3).

@@ -95,16 +95,17 @@ void main() {
   });
 
   test(
-    'projects and assignments survive the round trip (SPEC §6.12)',
+    'projects and the entries in them survive the round trip (SPEC §6.12)',
     () async {
-      await trackADay();
       final client = (await h.writer.createProject('Client A')).project;
-      final specs = (await h.repository.watchActivitiesById().first).values
-          .firstWhere((a) => a.name == 'Writing specs');
-      await h.writer.setActivityProject(
-        activityId: specs.id,
+      final filed = await h.writer.startByName(
+        name: 'Writing specs',
         projectId: client.id,
       );
+      h.clock.advance(const Duration(hours: 1));
+      await h.writer.startByName(name: 'Writing specs');
+      h.clock.advance(const Duration(hours: 1));
+      await h.writer.stop();
       final file = await exportAll();
 
       await h.writer.deleteAllData();
@@ -114,12 +115,12 @@ void main() {
       expect(await h.repository.watchProjectsById().first, <String, Object>{
         client.id: client,
       });
-      final activities = await h.repository.watchActivitiesById().first;
-      expect(activities[specs.id]!.projectId, client.id);
+      final entries = await h.entries();
+      expect((await h.byId(filed.entryId)).projectId, client.id);
       expect(
-        activities.values.where((a) => a.projectId != null),
+        entries.where((e) => e.projectId != null),
         hasLength(1),
-        reason: 'the others are still in no project',
+        reason: 'the other entry of the same activity is still in none',
       );
     },
   );

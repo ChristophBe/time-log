@@ -13,6 +13,7 @@ class TimeEntry {
     required this.endUtc,
     required this.tzName,
     this.note,
+    this.projectId,
   });
 
   final String id;
@@ -21,6 +22,11 @@ class TimeEntry {
   final DateTime? endUtc;
   final String tzName;
   final String? note;
+
+  /// The project this span was done for, or null for none (SPEC §6.12). It
+  /// belongs to the entry, not the activity, so one activity can be logged
+  /// under several projects.
+  final String? projectId;
 
   /// Longest acceptable note (SPEC §5.1). Enforced by the writer rather than
   /// only by the text field, so no code path can store a longer one.
@@ -58,6 +64,19 @@ class TimeEntry {
     endUtc: clearEnd ? null : (endUtc ?? this.endUtc),
     tzName: tzName,
     note: clearNote ? null : (note ?? this.note),
+    projectId: projectId,
+  );
+
+  /// [copyWith] cannot clear a nullable field without a flag per field, and a
+  /// project is set as often as it is cleared.
+  TimeEntry withProject(String? projectId) => TimeEntry(
+    id: id,
+    activityId: activityId,
+    startUtc: startUtc,
+    endUtc: endUtc,
+    tzName: tzName,
+    note: note,
+    projectId: projectId,
   );
 
   @override
@@ -68,11 +87,12 @@ class TimeEntry {
       other.startUtc == startUtc &&
       other.endUtc == endUtc &&
       other.note == note &&
-      other.tzName == tzName;
+      other.tzName == tzName &&
+      other.projectId == projectId;
 
   @override
   int get hashCode =>
-      Object.hash(id, activityId, startUtc, endUtc, note, tzName);
+      Object.hash(id, activityId, startUtc, endUtc, note, tzName, projectId);
 
   @override
   String toString() =>

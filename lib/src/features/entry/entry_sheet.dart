@@ -14,10 +14,12 @@ import '../../core/formatters.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
+import '../../domain/models/project.dart';
 import '../../domain/models/time_entry.dart';
 import '../../domain/timeline/invariants.dart';
 import '../../domain/timeline/time_conflicts.dart';
 import '../../domain/timeline_writer.dart';
+import '../projects/project_chip.dart';
 import '../today/action_feedback.dart';
 import '../today/latest_undo.dart';
 import '../today/resume_action.dart';
@@ -64,6 +66,10 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
     text: widget.entry.note ?? '',
   );
   final FocusNode _noteFocus = FocusNode(debugLabel: 'entry note');
+
+  /// Follows a project change made here; like the note it commits at once
+  /// rather than through Save (SPEC §6.12, §7.5).
+  late String? _projectId = widget.entry.projectId;
 
   @override
   void initState() {
@@ -151,6 +157,16 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
     );
     if (!mounted) return;
     showUndoableFeedback(context, message: 'Note changed', undo: undo);
+  }
+
+  Future<void> _changeProject(String? projectId) async {
+    setState(() => _projectId = projectId);
+    await setEntryProjectWithFeedback(
+      context,
+      ref,
+      entryId: widget.entry.id,
+      projectId: projectId,
+    );
   }
 
   Future<void> _save(TimeConflict? conflict) async {
@@ -281,6 +297,8 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
     final activities =
         ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{};
     final activity = activities[_activityId];
+    final projects =
+        ref.watch(projectsByIdProvider).value ?? const <String, Project>{};
     final settings =
         ref.watch(appSettingsProvider).value ?? const AppSettings();
     final now = ref.watch(appClockProvider).nowUtc();
@@ -412,6 +430,17 @@ class _EntrySheetState extends ConsumerState<EntrySheet> {
                   counterText: '',
                 ),
               ),
+              if (projects.isNotEmpty) ...<Widget>[
+                const SizedBox(height: Insets.sm),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ProjectChip(
+                    projectId: _projectId,
+                    projects: projects,
+                    onChanged: _changeProject,
+                  ),
+                ),
+              ],
               const SizedBox(height: Insets.lg),
               // One group, not three loose rows: Start, End and Duration are
               // three views of the same two instants, and editing any two moves
