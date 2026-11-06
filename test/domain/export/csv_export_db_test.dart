@@ -18,13 +18,52 @@ void main() {
   Future<Map<String, Activity>> activities() =>
       h.repository.watchActivitiesById().first;
 
-  Future<CsvExport> exportBetween(DateTime from, DateTime to) async => buildCsv(
+  Future<CsvExport> exportBetween(
+    DateTime from,
+    DateTime to, {
+    ProjectFilter project = const AllProjects(),
+  }) async => buildCsv(
     entries: await h.repository.watchEntriesInRange(from, to).first,
     activities: await activities(),
+    projects: await h.repository.watchProjectsById().first,
+    project: project,
     fromUtc: from,
     toUtc: to,
     now: h.now,
   );
+
+  test('a project export holds its activities and nothing else', () async {
+    final specs = await h.writer.startByName(name: 'Writing specs');
+    h.clock.advance(const Duration(minutes: 90));
+    await h.writer.startByName(name: 'Email');
+    h.clock.advance(const Duration(minutes: 30));
+    await h.writer.stop();
+    final client = (await h.writer.createProject('Client A')).project;
+    await h.writer.setActivityProject(
+      activityId: (await h.byId(specs.entryId)).activityId,
+      projectId: client.id,
+    );
+
+    final from = DateTime.utc(2026, 3, 10);
+    final to = DateTime.utc(2026, 3, 11);
+    final forClient = await exportBetween(
+      from,
+      to,
+      project: OnlyProject(client.id),
+    );
+    final unfiled = await exportBetween(from, to, project: const NoProject());
+    final all = await exportBetween(from, to);
+
+    expect(forClient.rowCount, 1);
+    expect(forClient.total, const Duration(minutes: 90));
+    expect(forClient.text, contains('Writing specs,Client A,'));
+    expect(unfiled.total, const Duration(minutes: 30));
+    expect(
+      forClient.total + unfiled.total,
+      all.total,
+      reason: 'every entry is in exactly one of the two',
+    );
+  });
 
   test('a day of real tracking comes back as rows that add up', () async {
     await h.writer.startByName(name: 'Writing specs');

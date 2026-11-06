@@ -6,12 +6,17 @@ class Activity {
     required this.name,
     required this.colorSeed,
     this.archived = false,
+    this.projectId,
   });
 
   final String id;
   final String name;
   final int colorSeed;
   final bool archived;
+
+  /// The project this activity, and so every entry of it, belongs to, or null
+  /// for none (SPEC §6.12).
+  final String? projectId;
 
   String get nameKey => keyFor(name);
 
@@ -52,6 +57,16 @@ class Activity {
     name: name ?? this.name,
     colorSeed: colorSeed ?? this.colorSeed,
     archived: archived ?? this.archived,
+    projectId: projectId,
+  );
+
+  /// Apart from [copyWith] because null is a value here: it means "no project".
+  Activity withProject(String? projectId) => Activity(
+    id: id,
+    name: name,
+    colorSeed: colorSeed,
+    archived: archived,
+    projectId: projectId,
   );
 
   @override
@@ -60,10 +75,11 @@ class Activity {
       other.id == id &&
       other.name == name &&
       other.colorSeed == colorSeed &&
-      other.archived == archived;
+      other.archived == archived &&
+      other.projectId == projectId;
 
   @override
-  int get hashCode => Object.hash(id, name, colorSeed, archived);
+  int get hashCode => Object.hash(id, name, colorSeed, archived, projectId);
 
   @override
   String toString() => 'Activity($id, $name)';

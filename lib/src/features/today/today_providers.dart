@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../core/clock.dart';
 import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
+import '../../domain/models/project.dart';
 import '../../domain/models/time_entry.dart';
 import '../../domain/timeline/day_totals.dart';
 import '../../domain/timeline/day_window.dart';
@@ -78,6 +79,11 @@ Stream<TimeEntry?> runningEntry(Ref ref) =>
 @riverpod
 Stream<Map<String, Activity>> activitiesById(Ref ref) =>
     ref.watch(timeEntryRepositoryProvider).watchActivitiesById();
+
+/// Every project, by id (SPEC §6.12).
+@riverpod
+Stream<Map<String, Project>> projectsById(Ref ref) =>
+    ref.watch(timeEntryRepositoryProvider).watchProjectsById();
 
 /// Entries touching the selected day, oldest first. An entry crossing midnight
 /// appears here for both days it touches (SPEC §5.3).

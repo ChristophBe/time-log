@@ -828,6 +828,181 @@ void main() {
     });
   });
 
+  group('SPEC §6.12 projects', () {
+    Future<String?> projectOf(String activityId) async => (await (h.db.select(
+      h.db.activities,
+    )..where((t) => t.id.equals(activityId))).getSingle()).projectId;
+
+    /// One finished entry of [name], returning its activity id.
+    Future<String> activityNamed(String name) async {
+      final start = await h.writer.startByName(name: name);
+      h.clock.advance(const Duration(minutes: 30));
+      await h.writer.stop();
+      return (await h.byId(start.entryId)).activityId;
+    }
+
+    test('createProjectResolvesAnExistingNameKey', () async {
+      final first = await h.writer.createProject('Client A');
+      expect(first.undo, isNotNull);
+
+      final again = await h.writer.createProject('  client   a ');
+
+      expect(again.project.id, first.project.id);
+      expect(again.undo, isNull, reason: 'nothing was written');
+      expect(await h.db.select(h.db.projects).get(), hasLength(1));
+    });
+
+    test('creating a project is undoable', () async {
+      final created = await h.writer.createProject('Client A');
+      await created.undo!.undo();
+
+      expect(await h.db.select(h.db.projects).get(), isEmpty);
+    });
+
+    test('renamingAProjectToATakenNameIsRefused', () async {
+      final a = await h.writer.createProject('Client A');
+      final b = await h.writer.createProject('Client B');
+
+      await expectLater(
+        h.writer.renameProject(projectId: b.project.id, name: 'client a'),
+        throwsA(
+          isA<ProjectNameTaken>().having(
+            (e) => e.other.id,
+            'other',
+            a.project.id,
+          ),
+        ),
+      );
+      final names = (await h.db.select(h.db.projects).get())
+          .map((p) => p.name)
+          .toSet();
+      expect(names, <String>{'Client A', 'Client B'});
+    });
+
+    test('a rename is undoable, and may change only the case', () async {
+      final a = await h.writer.createProject('client a');
+
+      final undo = await h.writer.renameProject(
+        projectId: a.project.id,
+        name: 'Client A',
+      );
+      expect((await h.db.select(h.db.projects).getSingle()).name, 'Client A');
+
+      await undo.undo();
+      expect((await h.db.select(h.db.projects).getSingle()).name, 'client a');
+    });
+
+    test(
+      'deletingAProjectUnassignsItsActivitiesAndKeepsTheirEntries',
+      () async {
+        final specs = await activityNamed('Writing specs');
+        final email = await activityNamed('Email');
+        final project = (await h.writer.createProject('Client A')).project;
+        await h.writer.setActivityProject(
+          activityId: specs,
+          projectId: project.id,
+        );
+        await h.writer.setActivityProject(
+          activityId: email,
+          projectId: project.id,
+        );
+        final before = await h.entries();
+
+        await h.writer.deleteProject(project.id);
+
+        expect(await h.db.select(h.db.projects).get(), isEmpty);
+        expect(await projectOf(specs), isNull);
+        expect(await projectOf(email), isNull);
+        expect(await h.entries(), before, reason: 'no entry is touched');
+        expect(await h.db.select(h.db.activities).get(), hasLength(2));
+      },
+    );
+
+    test('deletingAProjectIsUndoable', () async {
+      final specs = await activityNamed('Writing specs');
+      final email = await activityNamed('Email');
+      final project = (await h.writer.createProject('Client A')).project;
+      await h.writer.setActivityProject(
+        activityId: specs,
+        projectId: project.id,
+      );
+
+      final undo = await h.writer.deleteProject(project.id);
+      await undo.undo();
+
+      expect((await h.db.select(h.db.projects).getSingle()).id, project.id);
+      expect(await projectOf(specs), project.id);
+      expect(
+        await projectOf(email),
+        isNull,
+        reason: 'only what the delete removed is put back',
+      );
+    });
+
+    test('settingAnActivitysProjectIsUndoable', () async {
+      final specs = await activityNamed('Writing specs');
+      final a = (await h.writer.createProject('Client A')).project;
+      final b = (await h.writer.createProject('Client B')).project;
+      await h.writer.setActivityProject(activityId: specs, projectId: a.id);
+
+      final undo = await h.writer.setActivityProject(
+        activityId: specs,
+        projectId: b.id,
+      );
+      expect(await projectOf(specs), b.id);
+
+      await undo!.undo();
+      expect(await projectOf(specs), a.id);
+    });
+
+    test('clearing an activity\'s project leaves it in none', () async {
+      final specs = await activityNamed('Writing specs');
+      final a = (await h.writer.createProject('Client A')).project;
+      await h.writer.setActivityProject(activityId: specs, projectId: a.id);
+
+      await h.writer.setActivityProject(activityId: specs, projectId: null);
+
+      expect(await projectOf(specs), isNull);
+      expect(await h.db.select(h.db.projects).get(), hasLength(1));
+    });
+
+    test('settingTheSameProjectChangesNothing', () async {
+      final specs = await activityNamed('Writing specs');
+      final a = (await h.writer.createProject('Client A')).project;
+      await h.writer.setActivityProject(activityId: specs, projectId: a.id);
+      final before = await (h.db.select(
+        h.db.activities,
+      )..where((t) => t.id.equals(specs))).getSingle();
+
+      final undo = await h.writer.setActivityProject(
+        activityId: specs,
+        projectId: a.id,
+      );
+
+      expect(undo, isNull);
+      final after = await (h.db.select(
+        h.db.activities,
+      )..where((t) => t.id.equals(specs))).getSingle();
+      expect(after.updatedAt, before.updatedAt, reason: 'nothing was written');
+    });
+
+    test(
+      'a project survives a merge of activities only on the survivor',
+      () async {
+        // §6.7's merge drops the merged activity, and its project with it; the
+        // surviving activity keeps its own.
+        final emails = await activityNamed('Emails');
+        final email = await activityNamed('Email');
+        final a = (await h.writer.createProject('Client A')).project;
+        await h.writer.setActivityProject(activityId: emails, projectId: a.id);
+
+        await h.writer.renameActivity(activityId: emails, name: 'Email');
+
+        expect(await projectOf(email), isNull);
+      },
+    );
+  });
+
   group('database-level guarantees', () {
     test('a second running entry cannot be forced in', () async {
       await h.writer.startByName(name: 'A');

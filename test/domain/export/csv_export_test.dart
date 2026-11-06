@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_log/src/domain/export/csv_export.dart';
 import 'package:time_log/src/domain/models/activity.dart';
+import 'package:time_log/src/domain/models/project.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
 
 /// SPEC §8.6: the range extract.
@@ -111,8 +112,8 @@ void main() {
         ),
       ]);
       final fields = fieldsOf(rowsOf(csv).single);
-      expect(fields[5], DateTime.utc(2026, 3, 10).toIso8601String());
-      expect(fields[7], '60', reason: 'the slice, not the whole entry');
+      expect(fields[6], DateTime.utc(2026, 3, 10).toIso8601String());
+      expect(fields[8], '60', reason: 'the slice, not the whole entry');
     });
 
     test('an entry that runs past the range ends at the range', () {
@@ -124,8 +125,8 @@ void main() {
         ),
       ]);
       final fields = fieldsOf(rowsOf(csv).single);
-      expect(fields[6], DateTime.utc(2026, 3, 11).toIso8601String());
-      expect(fields[7], '60');
+      expect(fields[7], DateTime.utc(2026, 3, 11).toIso8601String());
+      expect(fields[8], '60');
     });
 
     test('an entry swallowing the whole range is clipped at both ends', () {
@@ -136,7 +137,7 @@ void main() {
           end: DateTime.utc(2026, 3, 12),
         ),
       ]);
-      expect(fieldsOf(rowsOf(csv).single)[7], '${24 * 60}');
+      expect(fieldsOf(rowsOf(csv).single)[8], '${24 * 60}');
     });
 
     test('an entry wholly outside the range does not appear', () {
@@ -177,7 +178,7 @@ void main() {
       ];
       final csv = export(entries);
       final summed = rowsOf(csv)
-          .map((row) => int.parse(fieldsOf(row)[7]))
+          .map((row) => int.parse(fieldsOf(row)[8]))
           .fold(0, (a, b) => a + b);
       expect(summed, csv.total.inMinutes);
       expect(csv.total, const Duration(minutes: 30 + 105 + 15));
@@ -190,9 +191,9 @@ void main() {
         entry(id: 'r1', start: DateTime.utc(2026, 3, 10, 14)),
       ]);
       final fields = fieldsOf(rowsOf(csv).single);
-      expect(fields[4], isEmpty, reason: 'end_local');
-      expect(fields[6], isEmpty, reason: 'end_utc');
-      expect(fields[7], '60', reason: 'measured to now');
+      expect(fields[5], isEmpty, reason: 'end_local');
+      expect(fields[7], isEmpty, reason: 'end_utc');
+      expect(fields[8], '60', reason: 'measured to now');
     });
 
     test('is clipped like any other when the range ended before now', () {
@@ -208,9 +209,9 @@ void main() {
         now: now,
       );
       final fields = fieldsOf(rowsOf(csv).single);
-      expect(fields[7], '60');
+      expect(fields[8], '60');
       expect(
-        fields[6],
+        fields[7],
         DateTime.utc(2026, 3, 10).toIso8601String(),
         reason: 'clipped at the range, so this end did happen',
       );
@@ -230,7 +231,7 @@ void main() {
       ]);
       // The row is no longer one line, so parse the body rather than split it.
       final body = csv.text.substring(csv.text.indexOf('\r\n') + 2);
-      expect(fieldsOf(body.trimRight())[2], note);
+      expect(fieldsOf(body.trimRight())[3], note);
       expect(csv.text, contains('""hi""'));
     });
 
@@ -287,7 +288,7 @@ void main() {
         '${local.day.toString().padLeft(2, '0')} '
         '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}';
-    expect(fieldsOf(rowsOf(csv).single)[3], expected);
+    expect(fieldsOf(rowsOf(csv).single)[4], expected);
   });
 
   test('the file name carries the range', () {
@@ -298,5 +299,102 @@ void main() {
       ),
       'time-log-2026-03-01_2026-03-31.csv',
     );
+  });
+
+  group('projects (SPEC §8.6)', () {
+    const clientA = Project(id: 'p1', name: 'Client A');
+    const projects = <String, Project>{'p1': clientA};
+    // Writing specs is in Client A; Email is in no project.
+    final filed = <String, Activity>{
+      'a1': specs.withProject('p1'),
+      'a2': email,
+    };
+
+    final day = <TimeEntry>[
+      entry(
+        id: 'specs',
+        start: DateTime.utc(2026, 3, 10, 9),
+        end: DateTime.utc(2026, 3, 10, 10),
+      ),
+      entry(
+        id: 'email',
+        start: DateTime.utc(2026, 3, 10, 10),
+        end: DateTime.utc(2026, 3, 10, 10, 30),
+        activityId: 'a2',
+      ),
+    ];
+
+    CsvExport filtered(ProjectFilter project) => buildCsv(
+      entries: day,
+      activities: filed,
+      projects: projects,
+      project: project,
+      fromUtc: from,
+      toUtc: to,
+      now: now,
+    );
+
+    String column(String row, String name) =>
+        fieldsOf(row)[csvColumns.indexOf(name)];
+
+    test('projectColumnFollowsActivity', () {
+      expect(csvColumns.indexOf('project'), csvColumns.indexOf('activity') + 1);
+
+      final rows = rowsOf(filtered(const AllProjects()));
+      expect(column(rows[0], 'project'), 'Client A');
+      expect(column(rows[1], 'project'), isEmpty, reason: 'in no project');
+    });
+
+    test('filterByProjectKeepsOnlyItsEntries', () {
+      final rows = rowsOf(filtered(const OnlyProject('p1')));
+
+      expect(rows.map((row) => column(row, 'id')), <String>['specs']);
+    });
+
+    test('noProjectFilterKeepsOnlyUnassigned', () {
+      final rows = rowsOf(filtered(const NoProject()));
+
+      expect(rows.map((row) => column(row, 'id')), <String>['email']);
+    });
+
+    test('filteredTotalSumsOnlyKeptRows', () {
+      expect(filtered(const OnlyProject('p1')).total, const Duration(hours: 1));
+      expect(filtered(const NoProject()).total, const Duration(minutes: 30));
+      expect(filtered(const OnlyProject('p1')).rowCount, 1);
+    });
+
+    test('a project with nothing in the range is an empty file', () {
+      expect(filtered(const OnlyProject('elsewhere')).isEmpty, isTrue);
+    });
+
+    test(
+      'filters are equal by value, so a provider sees the same argument',
+      () {
+        expect(const OnlyProject('p1'), OnlyProject('p1'.toString()));
+        expect(const OnlyProject('p1'), isNot(const OnlyProject('p2')));
+        expect(const NoProject(), isNot(const AllProjects()));
+      },
+    );
+
+    test('the file name carries the project', () {
+      final march = (first: DateTime(2026, 3, 1), last: DateTime(2026, 3, 31));
+      expect(
+        csvFileName(
+          firstDay: march.first,
+          lastDay: march.last,
+          project: const OnlyProject('p1'),
+          projectName: 'Client A / Café',
+        ),
+        'time-log-client-a-café-2026-03-01_2026-03-31.csv',
+      );
+      expect(
+        csvFileName(
+          firstDay: march.first,
+          lastDay: march.last,
+          project: const NoProject(),
+        ),
+        'time-log-no-project-2026-03-01_2026-03-31.csv',
+      );
+    });
   });
 }

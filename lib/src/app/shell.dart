@@ -9,7 +9,7 @@ import 'shortcuts.dart';
 import 'design.dart';
 import 'theme.dart';
 
-/// The three places the app has, and how they are reached (SPEC §8).
+/// The four places the app has, and how they are reached (SPEC §8).
 ///
 /// A bottom bar on phones, a rail from the medium breakpoint, an extended rail
 /// on a desktop-sized window. One widget rather than three, because the
@@ -33,6 +33,11 @@ class AppShell extends ConsumerWidget {
       icon: Icons.history_outlined,
       selected: Icons.history_rounded,
       label: 'History',
+    ),
+    (
+      icon: Icons.folder_outlined,
+      selected: Icons.folder_rounded,
+      label: 'Projects',
     ),
     (
       icon: Icons.settings_outlined,

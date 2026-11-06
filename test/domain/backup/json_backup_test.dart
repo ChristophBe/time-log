@@ -260,4 +260,111 @@ void main() {
       expect(result.skipped, 1);
     });
   });
+
+  group('projects (SPEC §6.12)', () {
+    BackupProject project({
+      String id = 'p1',
+      String name = 'Client A',
+      DateTime? updatedAt,
+    }) => BackupProject(
+      id: id,
+      name: name,
+      nameKey: name.toLowerCase(),
+      createdAt: DateTime.utc(2026),
+      updatedAt: updatedAt ?? DateTime.utc(2026),
+    );
+
+    BackupActivity filed(String projectId) => BackupActivity(
+      id: 'a1',
+      name: 'Writing specs',
+      nameKey: 'writing specs',
+      colorSeed: 0,
+      archived: false,
+      projectId: projectId,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+
+    String fileWithProjects(
+      List<BackupProject> projects,
+      List<BackupActivity> activities,
+    ) => encodeBackup(
+      projects: projects,
+      activities: activities,
+      entries: <BackupEntry>[],
+      settings: const AppSettings(),
+      exportedAt: exportedAt,
+    );
+
+    test('a project and its activities round-trip through the file', () {
+      final file = parsed(
+        fileWithProjects(
+          <BackupProject>[project()],
+          <BackupActivity>[filed('p1')],
+        ),
+      );
+
+      expect(file.projects.single.name, 'Client A');
+      expect(file.projects.single.nameKey, 'client a');
+      expect(file.activities.single.projectId, 'p1');
+    });
+
+    test('a file from before projects loads, with none', () {
+      final file = parsed(
+        '{"formatVersion": 2, "activities": [{"id": "a1", '
+        '"name": "Writing specs"}], "entries": []}',
+      );
+
+      expect(file.projects, isEmpty);
+      expect(file.activities.single.projectId, isNull);
+    });
+
+    test('an activity whose project is nowhere is rejected', () {
+      final result = planMerge(
+        incoming: parsed(
+          fileWithProjects(<BackupProject>[], <BackupActivity>[filed('p9')]),
+        ),
+        existingEntries: <BackupEntry>[],
+        existingActivities: <BackupActivity>[],
+        now: exportedAt,
+      );
+
+      expect(result.isApplicable, isFalse);
+      expect(result.rejection, contains('p9'));
+    });
+
+    test('a project already here satisfies an incoming activity', () {
+      final result = planMerge(
+        incoming: parsed(
+          fileWithProjects(<BackupProject>[], <BackupActivity>[filed('p1')]),
+        ),
+        existingEntries: <BackupEntry>[],
+        existingActivities: <BackupActivity>[],
+        existingProjects: <BackupProject>[project()],
+        now: exportedAt,
+      );
+
+      expect(result.isApplicable, isTrue, reason: result.rejection ?? '');
+      expect(result.projectsToWrite.single.id, 'p1');
+    });
+
+    test('a project merges by id, newest updatedAt winning', () {
+      final result = planMerge(
+        incoming: parsed(
+          fileWithProjects(<BackupProject>[
+            project(
+              name: 'Client A (renamed)',
+              updatedAt: DateTime.utc(2026, 3),
+            ),
+          ], <BackupActivity>[]),
+        ),
+        existingEntries: <BackupEntry>[],
+        existingActivities: <BackupActivity>[],
+        existingProjects: <BackupProject>[project()],
+        now: exportedAt,
+      );
+
+      expect(result.projectsToWrite.single.name, 'Client A (renamed)');
+    });
+  });
 }

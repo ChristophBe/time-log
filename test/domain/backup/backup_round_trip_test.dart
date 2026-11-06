@@ -42,6 +42,7 @@ void main() {
   Future<String> exportAll() async {
     final data = await h.repository.readForBackup();
     return encodeBackup(
+      projects: data.projects,
       activities: data.activities,
       entries: data.entries,
       settings: const AppSettings(),
@@ -56,6 +57,7 @@ void main() {
       incoming: (read as BackupReadOk).file,
       existingEntries: existing.entries,
       existingActivities: existing.activities,
+      existingProjects: existing.projects,
       now: h.now,
     );
     expect(plan.isApplicable, isTrue, reason: plan.rejection ?? '');
@@ -91,6 +93,36 @@ void main() {
       activitiesBefore,
     );
   });
+
+  test(
+    'projects and assignments survive the round trip (SPEC §6.12)',
+    () async {
+      await trackADay();
+      final client = (await h.writer.createProject('Client A')).project;
+      final specs = (await h.repository.watchActivitiesById().first).values
+          .firstWhere((a) => a.name == 'Writing specs');
+      await h.writer.setActivityProject(
+        activityId: specs.id,
+        projectId: client.id,
+      );
+      final file = await exportAll();
+
+      await h.writer.deleteAllData();
+      expect(await h.repository.watchProjectsById().first, isEmpty);
+      await importInto(file);
+
+      expect(await h.repository.watchProjectsById().first, <String, Object>{
+        client.id: client,
+      });
+      final activities = await h.repository.watchActivitiesById().first;
+      expect(activities[specs.id]!.projectId, client.id);
+      expect(
+        activities.values.where((a) => a.projectId != null),
+        hasLength(1),
+        reason: 'the others are still in no project',
+      );
+    },
+  );
 
   test('the restored timeline still satisfies SPEC §4', () async {
     await trackADay();
