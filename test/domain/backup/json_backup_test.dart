@@ -15,9 +15,11 @@ void main() {
     DateTime? deletedAt,
     String activityId = 'a1',
     String? note,
+    String? projectId,
   }) => BackupEntry(
     id: id,
     activityId: activityId,
+    projectId: projectId,
     startUtc: start,
     endUtc: running ? null : (end ?? start.add(const Duration(hours: 1))),
     tzName: 'Europe/Berlin',
@@ -274,55 +276,53 @@ void main() {
       updatedAt: updatedAt ?? DateTime.utc(2026),
     );
 
-    BackupActivity filed(String projectId) => BackupActivity(
-      id: 'a1',
-      name: 'Writing specs',
-      nameKey: 'writing specs',
-      colorSeed: 0,
-      archived: false,
+    BackupEntry filed(String projectId, {DateTime? deletedAt}) => entry(
+      id: 'e1',
+      start: DateTime.utc(2026, 3, 10, 9),
       projectId: projectId,
-      createdAt: DateTime.utc(2026),
-      updatedAt: DateTime.utc(2026),
+      deletedAt: deletedAt,
     );
 
     String fileWithProjects(
       List<BackupProject> projects,
-      List<BackupActivity> activities,
+      List<BackupEntry> entries,
     ) => encodeBackup(
       projects: projects,
-      activities: activities,
-      entries: <BackupEntry>[],
+      activities: <BackupActivity>[activity()],
+      entries: entries,
       settings: const AppSettings(),
       exportedAt: exportedAt,
     );
 
-    test('a project and its activities round-trip through the file', () {
+    test('a project and its entries round-trip through the file', () {
       final file = parsed(
         fileWithProjects(
           <BackupProject>[project()],
-          <BackupActivity>[filed('p1')],
+          <BackupEntry>[filed('p1')],
         ),
       );
 
       expect(file.projects.single.name, 'Client A');
       expect(file.projects.single.nameKey, 'client a');
-      expect(file.activities.single.projectId, 'p1');
+      expect(file.entries.single.projectId, 'p1');
     });
 
     test('a file from before projects loads, with none', () {
       final file = parsed(
         '{"formatVersion": 2, "activities": [{"id": "a1", '
-        '"name": "Writing specs"}], "entries": []}',
+        '"name": "Writing specs"}], "entries": [{"id": "e1", '
+        '"activityId": "a1", "startUtc": "2026-03-10T09:00:00.000Z", '
+        '"endUtc": "2026-03-10T10:00:00.000Z", "tzName": "UTC"}]}',
       );
 
       expect(file.projects, isEmpty);
-      expect(file.activities.single.projectId, isNull);
+      expect(file.entries.single.projectId, isNull);
     });
 
-    test('an activity whose project is nowhere is rejected', () {
+    test('an entry whose project is nowhere is rejected', () {
       final result = planMerge(
         incoming: parsed(
-          fileWithProjects(<BackupProject>[], <BackupActivity>[filed('p9')]),
+          fileWithProjects(<BackupProject>[], <BackupEntry>[filed('p9')]),
         ),
         existingEntries: <BackupEntry>[],
         existingActivities: <BackupActivity>[],
@@ -333,10 +333,26 @@ void main() {
       expect(result.rejection, contains('p9'));
     });
 
-    test('a project already here satisfies an incoming activity', () {
+    test('a deleted entry still needs its project', () {
+      // The tombstone is a row, and the foreign key still applies to it.
       final result = planMerge(
         incoming: parsed(
-          fileWithProjects(<BackupProject>[], <BackupActivity>[filed('p1')]),
+          fileWithProjects(<BackupProject>[], <BackupEntry>[
+            filed('p9', deletedAt: DateTime.utc(2026, 3, 10, 11)),
+          ]),
+        ),
+        existingEntries: <BackupEntry>[],
+        existingActivities: <BackupActivity>[],
+        now: exportedAt,
+      );
+
+      expect(result.isApplicable, isFalse);
+    });
+
+    test('a project already here satisfies an incoming entry', () {
+      final result = planMerge(
+        incoming: parsed(
+          fileWithProjects(<BackupProject>[], <BackupEntry>[filed('p1')]),
         ),
         existingEntries: <BackupEntry>[],
         existingActivities: <BackupActivity>[],
@@ -356,7 +372,7 @@ void main() {
               name: 'Client A (renamed)',
               updatedAt: DateTime.utc(2026, 3),
             ),
-          ], <BackupActivity>[]),
+          ], <BackupEntry>[]),
         ),
         existingEntries: <BackupEntry>[],
         existingActivities: <BackupActivity>[],

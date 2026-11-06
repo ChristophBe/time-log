@@ -6,16 +6,15 @@ import '../../app/palette.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/project.dart';
 import '../../domain/timeline_writer.dart';
-import '../entry/activity_editor.dart';
 import '../today/action_feedback.dart';
 import '../today/today_providers.dart';
 
-/// Projects and the activities in them (SPEC §8.7).
+/// Projects and the activities logged under them (SPEC §8.7).
 ///
-/// Every activity is listed somewhere — under its project, or under No project
-/// — so this is also where an activity is found to be put in one: tapping it
-/// opens the activity editor, whose Project picker is the one place that
-/// choice is made.
+/// A project belongs to entries, not activities (§6.12), so the activities
+/// listed under a project are a summary of where its time went, not a
+/// membership to edit: the project of an entry is chosen when it is started,
+/// from the running band, or on the entry itself.
 class ProjectsScreen extends ConsumerWidget {
   const ProjectsScreen({super.key});
 
@@ -31,21 +30,14 @@ class ProjectsScreen extends ConsumerWidget {
             .toList()
           ..sort((a, b) => _byName(a.name, b.name));
     final activities =
-        (ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{})
-            .values
-            .where((a) => !a.archived)
-            .toList()
-          ..sort((a, b) => _byName(a.name, b.name));
+        ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{};
+    final used =
+        ref.watch(projectActivityIdsProvider).value ??
+        const <String, Set<String>>{};
 
-    List<Activity> membersOf(String? projectId) =>
-        activities.where((a) => a.projectId == projectId).toList();
-
-    // An activity pointing at a project that is not loaded yet is shown under
-    // No project rather than nowhere.
-    final known = projects.map((p) => p.id).toSet();
-    final unassigned = activities
-        .where((a) => a.projectId == null || !known.contains(a.projectId))
-        .toList();
+    List<Activity> membersOf(String projectId) => <Activity>[
+      for (final id in used[projectId] ?? const <String>{}) ?activities[id],
+    ]..sort((a, b) => _byName(a.name, b.name));
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -72,20 +64,15 @@ class ProjectsScreen extends ConsumerWidget {
                   icon: const Icon(Icons.add_rounded),
                   label: const Text('New project'),
                 ),
-          body: projects.isEmpty && activities.isEmpty
+          body: projects.isEmpty
               ? const _Empty()
               : ListView(
                   // Room for the FAB over the last row.
                   padding: const EdgeInsets.only(bottom: 88),
                   children: <Widget>[
-                    if (projects.isEmpty) const _Empty(),
                     for (final project in projects) ...<Widget>[
                       _ProjectHeader(project: project),
-                      ..._rows(membersOf(project.id), empty: 'No activities'),
-                    ],
-                    if (unassigned.isNotEmpty) ...<Widget>[
-                      const _GroupHeader('No project'),
-                      ..._rows(unassigned),
+                      ..._rows(membersOf(project.id)),
                     ],
                   ],
                 ),
@@ -97,9 +84,8 @@ class ProjectsScreen extends ConsumerWidget {
   static int _byName(String a, String b) =>
       a.toLowerCase().compareTo(b.toLowerCase());
 
-  static List<Widget> _rows(List<Activity> activities, {String? empty}) =>
-      activities.isEmpty && empty != null
-      ? <Widget>[_Placeholder(empty)]
+  static List<Widget> _rows(List<Activity> activities) => activities.isEmpty
+      ? const <Widget>[_Placeholder('Nothing logged yet')]
       : <Widget>[
           for (final activity in activities)
             _ActivityRow(
@@ -130,7 +116,7 @@ class _Empty extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(Insets.xl),
     child: Text(
-      'Group activities into projects to see and export their time together.',
+      'Make a project to log time for it and export that time together.',
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.bodyMedium
           ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -206,13 +192,13 @@ class _Placeholder extends StatelessWidget {
   );
 }
 
-class _ActivityRow extends ConsumerWidget {
+class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.activity, super.key});
 
   final Activity activity;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = ActivityPalette.forSeed(
       activity.colorSeed,
       Theme.of(context).brightness,
@@ -225,8 +211,6 @@ class _ActivityRow extends ConsumerWidget {
         decoration: BoxDecoration(color: colors.edge, shape: BoxShape.circle),
       ),
       title: Text(activity.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () => showActivityEditor(context, ref, activity),
     );
   }
 }
@@ -329,8 +313,8 @@ class _ProjectSheetState extends ConsumerState<ProjectSheet> {
             ),
             const SizedBox(height: Insets.lg),
             Text(
-              'Deleting a project keeps its activities and their entries; '
-              'they move to No project.',
+              'Deleting a project keeps its entries; they move to No '
+              'project.',
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),

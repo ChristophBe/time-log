@@ -40,12 +40,6 @@ void main() {
       entries: <TimeEntry>[entry],
     );
     when(
-      () => h.writer.setActivityProject(
-        activityId: any(named: 'activityId'),
-        projectId: any(named: 'projectId'),
-      ),
-    ).thenAnswer((_) async => UndoToken('x', () async {}));
-    when(
       () => h.writer.renameActivity(
         activityId: any(named: 'activityId'),
         name: any(named: 'name'),
@@ -160,98 +154,18 @@ void main() {
     );
   });
 
-  group('the project (SPEC §6.12)', () {
-    const clientA = Project(id: 'p1', name: 'Client A');
-    const clientB = Project(id: 'p2', name: 'Client B');
-    const projects = <String, Project>{'p1': clientA, 'p2': clientB};
-    final projectField = find.byKey(const Key('activity-project'));
-
-    Future<void> choose(WidgetTester tester, String label) async {
-      await tester.ensureVisible(projectField);
-      await tester.tap(projectField);
-      await tester.pumpAndSettle();
-      // The open menu draws the items over the field; the last match is the
-      // one in the menu.
-      await tester.tap(find.text(label).last);
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('choosing a project goes through the writer, with undo', (
+  testWidgets('a project is not chosen here (SPEC §6.12)', (tester) async {
+    // It belongs to entries, so it is chosen when starting, from the running
+    // band, or on the entry -- never once for a whole activity.
+    await pumpEditor(
       tester,
-    ) async {
-      final h = await pumpEditor(tester, projects: projects);
+      projects: const <String, Project>{
+        'p1': Project(id: 'p1', name: 'Client A'),
+      },
+    );
 
-      await choose(tester, 'Client B');
-      await tester.tap(saveButton);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => h.writer.setActivityProject(activityId: 'a1', projectId: 'p2'),
-      ).called(1);
-      expect(find.text('Moved to Client B'), findsOneWidget);
-      expect(find.text('Undo'), findsOneWidget);
-    });
-
-    testWidgets('No project takes it out of its project', (tester) async {
-      final h = await pumpEditor(
-        tester,
-        activity: specs.withProject('p1'),
-        projects: projects,
-      );
-
-      await choose(tester, 'No project');
-      await tester.tap(saveButton);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => h.writer.setActivityProject(activityId: 'a1', projectId: null),
-      ).called(1);
-      expect(find.text('Removed from project'), findsOneWidget);
-    });
-
-    testWidgets('the current project is shown and left alone', (tester) async {
-      final h = await pumpEditor(
-        tester,
-        activity: specs.withProject('p1'),
-        projects: projects,
-      );
-
-      expect(
-        find.descendant(of: projectField, matching: find.text('Client A')),
-        findsOneWidget,
-      );
-      await tester.tap(saveButton);
-      await tester.pumpAndSettle();
-
-      verifyNever(
-        () => h.writer.setActivityProject(
-          activityId: any(named: 'activityId'),
-          projectId: any(named: 'projectId'),
-        ),
-      );
-    });
-
-    testWidgets('a merge files the activity that is left', (tester) async {
-      const email = Activity(id: 'a2', name: 'Email', colorSeed: 1);
-      final h = await pumpEditor(tester, projects: projects);
-      when(
-        () => h.writer.renameActivity(
-          activityId: any(named: 'activityId'),
-          name: any(named: 'name'),
-        ),
-      ).thenAnswer(
-        (_) async => (activity: email, undo: UndoToken('x', () async {})),
-      );
-
-      await tester.enterText(find.byKey(const Key('activity-name')), 'Email');
-      await choose(tester, 'Client A');
-      await tester.tap(saveButton);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => h.writer.setActivityProject(activityId: 'a2', projectId: 'p1'),
-      ).called(1);
-    });
+    expect(find.byKey(const Key('activity-project')), findsNothing);
+    expect(find.text('Client A'), findsNothing);
   });
 
   testWidgets('the editor meets SPEC §10', (tester) async {

@@ -14,8 +14,8 @@ import '../timeline/invariants.dart';
 ///
 /// v2 adds `activeSessions` (SPEC §9.9); a v1 file simply has none.
 ///
-/// v3 adds `projects` and an activity's `projectId` (SPEC §6.12); an older
-/// file has no projects and every activity is in none.
+/// v3 adds `projects` and an entry's `projectId` (SPEC §6.12); an older file
+/// has no projects and every entry is in none.
 const int backupFormatVersion = 3;
 
 /// One stored entry, with the bookkeeping columns the domain model leaves out.
@@ -35,11 +35,13 @@ class BackupEntry {
     required this.updatedAt,
     this.note,
     this.deletedAt,
+    this.projectId,
   });
 
   final String id;
   final String activityId;
   final String? note;
+  final String? projectId;
   final DateTime startUtc;
   final DateTime? endUtc;
   final String tzName;
@@ -56,12 +58,14 @@ class BackupEntry {
     endUtc: endUtc,
     tzName: tzName,
     note: note,
+    projectId: projectId,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'activityId': activityId,
     'note': note,
+    'projectId': projectId,
     'startUtc': startUtc.toUtc().toIso8601String(),
     'endUtc': endUtc?.toUtc().toIso8601String(),
     'tzName': tzName,
@@ -74,6 +78,7 @@ class BackupEntry {
     id: _string(json, 'id'),
     activityId: _string(json, 'activityId'),
     note: json['note'] as String?,
+    projectId: json['projectId'] as String?,
     startUtc: _instant(json, 'startUtc')!,
     endUtc: _instant(json, 'endUtc'),
     tzName: _string(json, 'tzName'),
@@ -93,7 +98,6 @@ class BackupActivity {
     required this.archived,
     required this.createdAt,
     required this.updatedAt,
-    this.projectId,
   });
 
   final String id;
@@ -101,7 +105,6 @@ class BackupActivity {
   final String nameKey;
   final int colorSeed;
   final bool archived;
-  final String? projectId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -111,7 +114,6 @@ class BackupActivity {
     'nameKey': nameKey,
     'colorSeed': colorSeed,
     'archived': archived,
-    'projectId': projectId,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'updatedAt': updatedAt.toUtc().toIso8601String(),
   };
@@ -122,7 +124,6 @@ class BackupActivity {
     nameKey: json['nameKey'] as String? ?? _string(json, 'name'),
     colorSeed: (json['colorSeed'] as num?)?.toInt() ?? 0,
     archived: json['archived'] == true,
-    projectId: json['projectId'] as String?,
     createdAt: _instant(json, 'createdAt') ?? DateTime.utc(2000),
     updatedAt: _instant(json, 'updatedAt') ?? DateTime.utc(2000),
   );
@@ -458,13 +459,14 @@ BackupPlan planMerge({
         );
       }
     }
-    // And every activity to a project that will exist, or to none.
-    for (final activity in mergedActivities.values) {
-      final projectId = activity.projectId;
+    // And every entry to a project that will exist, or to none. Deleted ones
+    // too: a tombstone is still a row, and the foreign key still applies.
+    for (final entry in merged.values) {
+      final projectId = entry.projectId;
       if (projectId != null && !mergedProjects.containsKey(projectId)) {
         throw InvariantViolation(
           'Missing project',
-          'Activity ${activity.id} refers to project $projectId, which is '
+          'Entry ${entry.id} refers to project $projectId, which is '
               'not in the file or the database.',
         );
       }
