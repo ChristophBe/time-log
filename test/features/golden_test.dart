@@ -150,7 +150,7 @@ void main() {
   testWidgets('today, running, on Apple', (tester) async {
     await working().pump(tester, const TodayScreen());
     await expectGolden(tester, 'today-running-apple');
-  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets('the entry sheet, on Apple', (tester) async {
     final h = working();
@@ -174,7 +174,7 @@ void main() {
     await tester.tap(find.text('open sheet'));
     await tester.pumpAndSettle();
     await expectGolden(tester, 'entry-sheet-apple');
-  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   for (final brightness in Brightness.values) {
     testWidgets('history (${brightness.name})', (tester) async {

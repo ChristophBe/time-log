@@ -26,6 +26,4 @@ bool get isCommandKeyPressed => _isApple
 /// How to say the command key in a menu or a help sheet.
 String get commandKeyLabel => _isApple ? 'Cmd' : 'Ctrl';
 
-bool get _isApple =>
-    defaultTargetPlatform == TargetPlatform.macOS ||
-    defaultTargetPlatform == TargetPlatform.iOS;
+bool get _isApple => defaultTargetPlatform == TargetPlatform.macOS;

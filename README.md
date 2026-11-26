@@ -38,19 +38,18 @@ The launcher icon is generated from one hand-written SVG in `tool/brand/`; that 
 has the two commands.
 
 **On each platform it is a guest, not a tourist.** The identity above is the same everywhere; the
-manners are the host's. Apple platforms get Liquid Glass — translucent chrome that floats over the
-day, capsule controls, wheel pickers (macOS takes the Material dial for times), Cupertino dialogs, a real macOS menu bar — Android gets
-Material with predictive back and edge-to-edge, Windows and Linux get their own density and corner
-radii. `lib/src/app/platform_style.dart` holds the numbers and `adaptive.dart` the controls that
+manners are the host's. macOS gets Liquid Glass — translucent chrome that floats over the
+day, capsule controls, a wheel for dates (the Material dial for times), Cupertino dialogs, a real
+macOS menu bar — while Windows and Linux get their own density and corner radii. `lib/src/app/platform_style.dart` holds the numbers and `adaptive.dart` the controls that
 differ; SPEC §9.8 states which things may vary and which may not. `flutter test` pins the target
-platform to Android, so the suite is the Material path by default and
-`test/features/platform_test.dart` is what goes looking for the others.
+platform to Android, which the app does not target, so the suite runs the GNOME path by default and
+`test/features/platform_test.dart` is what goes looking for macOS.
 
 | Works today | Not built yet (SPEC §13, P5–P6) |
 | --- | --- |
-| Start / stop / resume / continue, with undo on everything | Android notification, iOS Live Activity |
-| Day calendar: hour axis, now-line, gaps, midnight splitting, DST-correct days | Desktop tray and global shortcuts |
-| Correcting a boundary by drag, by typing, or by keyboard alone | Web install / PWA polish |
+| Start / stop / resume / continue, with undo on everything | Desktop tray quick-start |
+| Day calendar: hour axis, now-line, gaps, midnight splitting, DST-correct days | Global shortcuts |
+| Correcting a boundary by drag, by typing, or by keyboard alone | |
 | History, grouped by day, searchable by name and note | Week view, per-activity reports (P6) |
 | JSON backup and import, with a dry run before anything changes | Tags, sync (P6) |
 | Exporting a date range as CSV, for everything or one project | |
@@ -65,7 +64,7 @@ platform to Android, so the suite is the Material path by default and
 ```sh
 flutter pub get
 dart run build_runner build      # drift + riverpod code generation
-flutter run -d chrome            # or: -d macos, -d android, …
+flutter run -d macos              # or: -d linux, -d windows
 ```
 
 Code generation is required after changing anything under `lib/src/data/db/` or any `@riverpod`
@@ -106,18 +105,13 @@ in `/Applications`, where the login item behaves as shipped.
 
 ### Platform notes
 
-The app targets Android, iOS, macOS, Windows, Linux and web from one codebase. **Web** and **macOS**
-have been built and run by hand; the other four are scaffolded, and CI is what compiles them — every
-push to `main` builds all six, because "nothing silently missing on a platform" (SPEC §14.12) is not
-a claim this machine can check on its own with no Android SDK on it.
+The app targets macOS, Windows and Linux from one codebase. **macOS** has been built and run by
+hand; the other two are scaffolded, and CI is what compiles them — every push to `main` builds all
+three, because "nothing silently missing on a platform" (SPEC §14.12) is not a claim this machine
+can check on its own.
 
-Correctness does not depend on a device: all 553 tests run on the Dart VM. The one
+Correctness does not depend on a device: all the tests run on the Dart VM. The one
 exception is the native half of active time (SPEC §9.9), which needs a real Mac and a real lock screen.
-
-On the web, drift picks the best storage the browser offers. `flutter run`'s dev server does not send
-the COOP/COEP headers that OPFS needs, so it generally falls back to IndexedDB — both persist, so
-this only affects performance. In a private window there may be no persistent storage at all; the
-app says so rather than pretending the data is safe.
 
 ## Tests
 
@@ -175,9 +169,9 @@ pixel-exact against whatever Skia the SDK ships.
 | `dart format`, `flutter analyze`, `flutter test` | ✅ | ✅ |
 | generated code is current (`build_runner` + `git diff --exit-code`) | ✅ | ✅ |
 | goldens (on macOS) | ✅ | ✅ |
-| build web, Android | ✅ | ✅ |
-| build iOS, macOS, Windows, Linux | | ✅ |
-| integration suite on an Android emulator and macOS | | ✅ |
+| build Linux | ✅ | ✅ |
+| build Windows, macOS | | ✅ |
+| integration suite on macOS | | ✅ |
 
 The codegen check exists because `analysis_options.yaml` excludes `**/*.g.dart`, so a stale
 generated file would otherwise pass everything. The macOS build job signs with the real Developer ID
@@ -185,7 +179,7 @@ when the secrets are present, which also runs the release script's notarisation 
 push instead of saving the surprise for a release; without the secrets it builds Debug and says so.
 
 `.github/workflows/release.yml` turns a `v*` tag into a draft GitHub Release: a notarised `.dmg`
-from `tool/release_macos.sh`, an APK, a Windows zip, a Linux tarball and the web bundle. It refuses
+from `tool/release_macos.sh`, a Windows zip and a Linux tarball. It refuses
 to run if the tag and `pubspec.yaml` disagree about the version. Nothing above the release row needs a secret; the
 notarised `.dmg` needs five, and `tool/ci/` holds the two scripts that put them where the release
 script expects to find them.

@@ -16,6 +16,7 @@ import 'package:time_log/src/features/today/today_providers.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §8: Today / History / Projects / Settings, and how each width reaches them.
 void main() {
@@ -231,7 +232,7 @@ void main() {
     await pumpApp(tester);
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
     handle.dispose();
   });
 }

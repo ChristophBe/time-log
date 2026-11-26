@@ -5,12 +5,8 @@ import 'design.dart';
 
 /// Which design system's manners the app is using.
 enum PlatformIdiom {
-  /// iOS and macOS: continuous corners, grouped lists, wheel pickers (bar the
-  /// time on macOS, SPEC §9.8).
+  /// macOS: continuous corners, grouped lists, Liquid Glass chrome.
   apple,
-
-  /// Android, and the fallback for anything unrecognised.
-  material,
 
   /// Windows: tight corners, dense controls.
   fluent,
@@ -28,8 +24,9 @@ enum PlatformIdiom {
 /// shapes are deliberately not in here (SPEC §9.8).
 ///
 /// Chosen from [defaultTargetPlatform], which `flutter test` pins to Android —
-/// so the whole existing suite exercises the Material values, and the others
-/// are reached with `debugDefaultTargetPlatformOverride`.
+/// a mobile value this app does not target, so it falls through to [gnome] and
+/// the suite exercises those values; the others are reached with
+/// `debugDefaultTargetPlatformOverride`.
 @immutable
 class PlatformStyle {
   const PlatformStyle({
@@ -61,17 +58,17 @@ class PlatformStyle {
   /// around it to be hit.
   final double buttonHeight;
 
-  /// Material wants a stadium; the others want a rectangle with corners.
+  /// Apple wants a stadium; the others want a rectangle with corners.
   final bool pillButtons;
 
   /// Desktops are pointer-first and expect more on screen at once.
   final bool compact;
 
-  /// iOS centres a navigation title; GNOME centres its header bar title.
+  /// macOS centres a navigation title; GNOME centres its header bar title.
   final bool centredTitle;
 
-  /// Material's bottom sheet announces itself with a drag handle. An Apple
-  /// sheet is inset and rounded and does not need one.
+  /// Whether a sheet announces itself with a drag handle. An Apple sheet is
+  /// inset and rounded and does not need one.
   final bool sheetDragHandle;
 
   /// Whether chrome is made of Liquid Glass: translucent, blurred, floating
@@ -89,19 +86,7 @@ class PlatformStyle {
   VisualDensity get density =>
       compact ? VisualDensity.compact : VisualDensity.standard;
 
-  static const PlatformStyle material = PlatformStyle(
-    idiom: PlatformIdiom.material,
-    controlRadius: 10,
-    containerRadius: 14,
-    sheetRadius: 24,
-    buttonHeight: 44,
-    pillButtons: true,
-    compact: false,
-    centredTitle: false,
-    sheetDragHandle: true,
-  );
-
-  /// Liquid Glass, as of iOS 26 and macOS Tahoe: capsule controls, markedly
+  /// Liquid Glass, as of macOS Tahoe: capsule controls, markedly
   /// rounder containers, and chrome that floats over the content as a
   /// translucent material rather than sitting beside it in its own band.
   ///
@@ -146,14 +131,13 @@ class PlatformStyle {
   );
 
   static PlatformStyle of(TargetPlatform platform) => switch (platform) {
-    TargetPlatform.iOS || TargetPlatform.macOS => apple,
+    TargetPlatform.macOS => apple,
     TargetPlatform.windows => fluent,
-    TargetPlatform.linux => gnome,
-    TargetPlatform.android || TargetPlatform.fuchsia => material,
+    // Linux, and the mobile platforms the app does not target.
+    _ => gnome,
   };
 
-  /// macOS is Apple-flavoured but a desktop: pointer-first, and its windows are
-  /// dense. The phone values are otherwise right for it.
+  /// macOS is Apple-flavoured but pointer-first, and its windows are dense.
   static PlatformStyle forCurrent() {
     final style = of(defaultTargetPlatform);
     if (defaultTargetPlatform == TargetPlatform.macOS) {

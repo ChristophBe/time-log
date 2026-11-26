@@ -7,7 +7,6 @@ import '../../app/theme.dart';
 import '../calendar/day_navigation_bar.dart';
 import 'long_run_banner.dart';
 import 'running_band.dart';
-import 'storage_banner.dart';
 
 /// The top of Today: one surface carrying the day and what is running on it.
 ///
@@ -45,7 +44,6 @@ class DayHeader extends StatelessWidget {
           // Below the band, because it is about the thing the band is showing
           // (SPEC §8.1).
           const LongRunBanner(),
-          const StorageBanner(),
           // A glass header needs no rule under it: the material is what says
           // where the chrome stops, and a line there is the thing Liquid Glass
           // does away with (SPEC §9.8).

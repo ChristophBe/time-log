@@ -21,7 +21,6 @@ dependencies:
   riverpod_annotation: ^4.0.7
   share_plus: ^13.3.1
   uuid: ^4.6.0
-  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -40,19 +39,9 @@ dev_dependencies:
 # drift apart: `dart run flutter_launcher_icons` after editing tool/brand/.
 flutter_launcher_icons:
   image_path: "tool/brand/mark-1024.png"
-  android: true
-  adaptive_icon_background: "#17171A"
-  adaptive_icon_foreground: "tool/brand/mark-foreground-1024.png"
-  ios: true
-  remove_alpha_ios: true
   macos:
     generate: true
     image_path: "tool/brand/mark-1024.png"
-  web:
-    generate: true
-    image_path: "tool/brand/mark-1024.png"
-    background_color: "#17171A"
-    theme_color: "#17171A"
   windows:
     generate: true
     image_path: "tool/brand/mark-1024.png"

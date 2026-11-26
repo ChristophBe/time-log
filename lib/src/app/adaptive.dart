@@ -8,12 +8,11 @@ import 'platform_style.dart';
 
 /// Pickers in the idiom of the platform the app is a guest on (SPEC §9.8).
 ///
-/// Apple platforms expect a wheel in a popup, Material a dial and a calendar
-/// grid. The exception is the time on macOS, which gets the dial: see
-/// [showAdaptiveTimePicker]. Both return the same thing, so SPEC §7's clamping
-/// and the conflict text do not know or care which one drew it — the one place
-/// an adaptive UI is allowed to differ is how it looks and feels, never what it
-/// means.
+/// macOS expects a wheel in a popup for a date, the other desktops a calendar
+/// grid. The time is a dial everywhere: see [showAdaptiveTimePicker]. Both
+/// return the same thing, so SPEC §7's clamping and the conflict text do not
+/// know or care which one drew it — the one place an adaptive UI is allowed to
+/// differ is how it looks and feels, never what it means.
 
 /// A time, asked for in the platform's own way.
 Future<TimeOfDay?> showAdaptiveTimePicker(
@@ -24,36 +23,16 @@ Future<TimeOfDay?> showAdaptiveTimePicker(
 }) {
   // macOS is Apple-flavoured, but a wheel is a touch control: it is poor with a
   // pointer, and the dial brings a keyboard entry mode with it.
-  if (Theme.of(context).platform != TargetPlatform.iOS) {
-    return showTimePicker(
-      context: context,
-      initialTime: initial,
-      helpText: helpText,
-      // The dial takes its clock format from MediaQuery rather than an
-      // argument, and would otherwise follow the system over the app's setting.
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
-        child: child!,
-      ),
-    );
-  }
-
-  // CupertinoDatePicker works in DateTimes where Material works in TimeOfDay,
-  // so the wheel needs a date to hang the time on. Any date does: the caller
-  // reads the hour and minute back and discards the rest. A constant one also
-  // keeps the system clock out of the app, which is a rule with a grep behind
-  // it (SPEC §11.4) — and that grep reads comments too.
-  final seed = DateTime(2000, 1, 1, initial.hour, initial.minute);
-  return _showWheel<TimeOfDay>(
-    context,
-    title: helpText,
-    build: (onChanged) => CupertinoDatePicker(
-      mode: CupertinoDatePickerMode.time,
-      initialDateTime: seed,
-      use24hFormat: use24h,
-      onDateTimeChanged: (value) => onChanged(TimeOfDay.fromDateTime(value)),
+  return showTimePicker(
+    context: context,
+    initialTime: initial,
+    helpText: helpText,
+    // The dial takes its clock format from MediaQuery rather than an
+    // argument, and would otherwise follow the system over the app's setting.
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
+      child: child!,
     ),
-    initial: initial,
   );
 }
 

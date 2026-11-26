@@ -16,7 +16,7 @@ import 'theme.dart';
 ///
 /// **It degrades to opaque.** Apple's own material does the same under Reduce
 /// Transparency. Flutter does not surface that setting, so the nearest honest
-/// signal is `MediaQuery.highContrast` (iOS's Increase Contrast), and a blur is
+/// signal is `MediaQuery.highContrast` (macOS's Increase Contrast), and a blur is
 /// also simply skipped on platforms that are not Apple. Text contrast is
 /// measured against the opaque tint either way, so SPEC §10.3 holds in both
 /// states.
