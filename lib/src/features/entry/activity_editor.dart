@@ -3,9 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/design.dart';
 import '../../app/palette.dart';
+import '../../core/clock.dart';
+import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/timeline_writer.dart';
 import '../today/action_feedback.dart';
+import '../today/today_providers.dart';
+import 'activity_suggestion_row.dart';
+import 'entry_providers.dart';
+import 'suggestion_keyboard.dart';
 
 /// Rename and recolour an activity (SPEC §6.7).
 ///
@@ -38,6 +44,12 @@ class _ActivityEditorState extends ConsumerState<ActivityEditor> {
     text: widget.activity.name,
   );
   late int _seed = widget.activity.colorSeed;
+
+  /// Which suggestion Enter would pick. -1 means "use what is typed".
+  int _highlighted = -1;
+
+  /// The most rows worth showing under a field that sits in a scrolling sheet.
+  static const int _maxSuggestions = 5;
 
   @override
   void dispose() {
@@ -76,9 +88,45 @@ class _ActivityEditorState extends ConsumerState<ActivityEditor> {
     showUndoableFeedback(context, message: messages.join(' · '), undo: undo);
   }
 
+  /// Choosing a suggestion fills the field rather than saving, because Save
+  /// also carries the colour.
+  void _fill(String name) => setState(() {
+    _name.value = TextEditingValue(
+      text: name,
+      selection: TextSelection.collapsed(offset: name.length),
+    );
+    _highlighted = -1;
+  });
+
+  /// The other activity that [name] would fold this one into, if any.
+  Activity? _mergeTarget(String name, Map<String, Activity> activities) {
+    final key = Activity.keyFor(name);
+    for (final other in activities.values) {
+      if (other.id != widget.activity.id && other.nameKey == key) return other;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
+    final suggestions =
+        (ref
+                    .watch(
+                      relabelSuggestionsProvider(
+                        widget.activity.id,
+                        _name.text,
+                      ),
+                    )
+                    .value ??
+                const <ActivitySuggestion>[])
+            .take(_maxSuggestions)
+            .toList();
+    final now = ref.watch(appClockProvider).nowUtc();
+    final target = _mergeTarget(
+      _name.text.trim(),
+      ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{},
+    );
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -94,17 +142,41 @@ class _ActivityEditorState extends ConsumerState<ActivityEditor> {
           children: <Widget>[
             Text('Activity', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: Insets.md),
-            TextField(
-              key: const Key('activity-name'),
-              controller: _name,
-              maxLength: Activity.maxNameLength,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Name',
-                counterText: '',
-                helperText: 'An existing name merges the two together.',
+            Focus(
+              onKeyEvent: (_, event) => handleSuggestionKey(
+                event,
+                suggestions: suggestions,
+                highlighted: _highlighted,
+                onHighlight: (index) => setState(() => _highlighted = index),
+                onPickSuggestion: (s) => _fill(s.activity.name),
+                onCommitTyped: () {
+                  if (Activity.isValidName(_name.text.trim())) _save();
+                },
+              ),
+              child: TextField(
+                key: const Key('activity-name'),
+                controller: _name,
+                maxLength: Activity.maxNameLength,
+                onChanged: (_) => setState(() => _highlighted = -1),
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  counterText: '',
+                  helperText: target == null
+                      ? 'An existing name merges the two together.'
+                      : 'Merges into “${target.name}”: every entry moves over.',
+                ),
               ),
             ),
+            for (var i = 0; i < suggestions.length; i++)
+              ActivitySuggestionRow(
+                key: ValueKey<String>(
+                  'editor-suggestion-${suggestions[i].activity.id}',
+                ),
+                suggestion: suggestions[i],
+                highlighted: i == _highlighted,
+                now: now,
+                onTap: () => _fill(suggestions[i].activity.name),
+              ),
             const SizedBox(height: Insets.lg),
             Text('Colour', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: Insets.sm),
