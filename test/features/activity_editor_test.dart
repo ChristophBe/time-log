@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/project.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
@@ -33,10 +34,14 @@ void main() {
     WidgetTester tester, {
     Activity activity = specs,
     Map<String, Project> projects = const <String, Project>{},
+    Map<String, Activity> others = const <String, Activity>{},
   }) async {
     final h = WidgetHarness(
       now: now,
-      activities: <String, Activity>{'a1': activity},
+      activities: <String, Activity>{'a1': activity, ...others},
+      suggestions: <ActivitySuggestion>[
+        for (final a in others.values) suggestionFor(activity: a),
+      ],
       projects: projects,
       entries: <TimeEntry>[entry],
     );
@@ -93,6 +98,59 @@ void main() {
           .controller!
           .text,
       'Writing specs',
+    );
+  });
+
+  testWidgets('typing an existing name says what it merges into', (
+    tester,
+  ) async {
+    await pumpEditor(
+      tester,
+      others: const <String, Activity>{
+        'a2': Activity(id: 'a2', name: 'Reading', colorSeed: 1),
+      },
+    );
+
+    expect(
+      find.text('An existing name merges the two together.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byKey(const Key('activity-name')), 'reading');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Merges into “Reading”'), findsOneWidget);
+  });
+
+  testWidgets('picking a suggestion fills the name without saving', (
+    tester,
+  ) async {
+    final h = await pumpEditor(
+      tester,
+      others: const <String, Activity>{
+        'a2': Activity(id: 'a2', name: 'Reading', colorSeed: 1),
+      },
+    );
+
+    // The field opens holding the current name, so suggestions narrow to what
+    // is typed over it.
+    await tester.enterText(find.byKey(const Key('activity-name')), 'Read');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('editor-suggestion-a2')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('activity-name')))
+          .controller!
+          .text,
+      'Reading',
+    );
+    verifyNever(
+      () => h.writer.renameActivity(
+        activityId: any(named: 'activityId'),
+        name: any(named: 'name'),
+      ),
     );
   });
 
