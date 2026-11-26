@@ -27,10 +27,13 @@ void main() {
     matching: find.widgetWithText(FilledButton, 'Save'),
   );
 
-  Future<WidgetHarness> pumpEditor(WidgetTester tester) async {
+  Future<WidgetHarness> pumpEditor(
+    WidgetTester tester, {
+    Map<String, Activity> others = const <String, Activity>{},
+  }) async {
     final h = WidgetHarness(
       now: now,
-      activities: const <String, Activity>{'a1': specs},
+      activities: <String, Activity>{'a1': specs, ...others},
       entries: <TimeEntry>[entry],
     );
     when(
@@ -82,11 +85,34 @@ void main() {
     expect(find.byType(ActivityEditor), findsOneWidget);
     expect(
       tester
-          .widget<TextField>(find.byKey(const Key('activity-name')))
+          .widget<TextField>(
+            find.descendant(
+              of: find.byKey(const Key('activity-name')),
+              matching: find.byType(TextField),
+            ),
+          )
           .controller!
           .text,
       'Writing specs',
     );
+  });
+
+  testWidgets('typing an existing name says what it merges into', (
+    tester,
+  ) async {
+    await pumpEditor(
+      tester,
+      others: const <String, Activity>{
+        'a2': Activity(id: 'a2', name: 'Reading', colorSeed: 1),
+      },
+    );
+
+    expect(find.text('An existing name merges the two together.'), findsOne);
+
+    await tester.enterText(find.byKey(const Key('activity-name')), 'reading');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Merges into “Reading”'), findsOneWidget);
   });
 
   testWidgets('renaming goes through the writer, with undo', (tester) async {

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/design.dart';
+import '../../core/clock.dart';
 import '../../core/formatters.dart';
-import '../../domain/models/activity.dart';
+import '../../data/repositories/time_entry_repository.dart';
+import '../entry/activity_input.dart';
+import '../entry/entry_providers.dart';
 
 /// Asks what you were doing in a gap you just tapped (SPEC §8.2).
 ///
@@ -29,7 +33,7 @@ Future<String?> showFillGapSheet(
   ),
 );
 
-class _FillGapSheet extends StatefulWidget {
+class _FillGapSheet extends ConsumerStatefulWidget {
   const _FillGapSheet({
     required this.startLocal,
     required this.endLocal,
@@ -45,26 +49,39 @@ class _FillGapSheet extends StatefulWidget {
   final String title;
 
   @override
-  State<_FillGapSheet> createState() => _FillGapSheetState();
+  ConsumerState<_FillGapSheet> createState() => _FillGapSheetState();
 }
 
-class _FillGapSheetState extends State<_FillGapSheet> {
-  final _name = TextEditingController();
+class _FillGapSheetState extends ConsumerState<_FillGapSheet> {
+  final ActivityInputController _input = ActivityInputController();
+
+  /// Enter fires both the key event and `onSubmitted`; popping twice would
+  /// pop whatever is under the sheet.
+  bool _done = false;
 
   @override
   void dispose() {
-    _name.dispose();
+    _input.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    final name = _name.text.trim();
-    if (!Activity.isValidName(name)) return;
+  void _submit(String name) {
+    if (_done) return;
+    _done = true;
     Navigator.of(context).pop(name);
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _input.listenable,
+    builder: (context, _) => _buildSheet(context),
+  );
+
+  Widget _buildSheet(BuildContext context) {
+    final suggestions =
+        ref.watch(activityInputSuggestionsProvider(_input.query, null)).value ??
+        const <ActivitySuggestion>[];
+    final now = ref.watch(appClockProvider).nowUtc();
     final range =
         '${formatTimeOfDay(widget.startLocal, use24h: widget.use24h)} – '
         '${formatTimeOfDay(widget.endLocal, use24h: widget.use24h)}';
@@ -91,25 +108,29 @@ class _FillGapSheetState extends State<_FillGapSheet> {
                   ),
             ),
             const SizedBox(height: Insets.lg),
-            TextField(
+            ActivityInputField(
               key: const Key('fill-gap-name'),
-              controller: _name,
+              controller: _input,
+              suggestions: suggestions,
+              onSubmit: _submit,
               autofocus: true,
-              maxLength: Activity.maxNameLength,
-              textInputAction: TextInputAction.done,
-              onChanged: (_) => setState(() {}),
-              onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                labelText: 'What were you doing?',
-                counterText: '',
+              label: 'What were you doing?',
+            ),
+            Flexible(
+              child: ActivityInputSuggestions(
+                controller: _input,
+                suggestions: suggestions,
+                now: now,
+                onPick: _submit,
+                keyPrefix: 'fill-gap-suggestion',
               ),
             ),
             const SizedBox(height: Insets.lg),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: Activity.isValidName(_name.text.trim())
-                    ? _submit
+                onPressed: _input.isValid
+                    ? () => _submit(_input.typedName)
                     : null,
                 child: const Text('Add entry'),
               ),

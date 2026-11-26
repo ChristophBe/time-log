@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:time_log/src/data/repositories/time_entry_repository.dart';
 import 'package:time_log/src/domain/models/activity.dart';
 import 'package:time_log/src/domain/models/app_settings.dart';
 import 'package:time_log/src/domain/models/time_entry.dart';
@@ -105,6 +106,54 @@ void main() {
         ),
       ).called(1);
       expect(find.text('Undo'), findsOneWidget);
+    });
+
+    testWidgets('past activities are suggested, and picking one adds it', (
+      tester,
+    ) async {
+      const reading = Activity(id: 'a2', name: 'Reading', colorSeed: 1);
+      final h = WidgetHarness(
+        now: now,
+        activities: const <String, Activity>{'a1': specs, 'a2': reading},
+        suggestions: <ActivitySuggestion>[suggestionFor(activity: reading)],
+        dayWindows: utcDays(),
+        entries: <TimeEntry>[
+          entry(
+            id: 'e1',
+            start: DateTime.utc(2026, 3, 10, 11),
+            end: DateTime.utc(2026, 3, 10, 12),
+          ),
+          entry(
+            id: 'e2',
+            start: DateTime.utc(2026, 3, 10, 13),
+            end: DateTime.utc(2026, 3, 10, 14),
+          ),
+        ],
+      );
+      when(
+        () => h.writer.insertEntry(
+          name: any(named: 'name'),
+          startUtc: any(named: 'startUtc'),
+          endUtc: any(named: 'endUtc'),
+        ),
+      ).thenAnswer((_) async => UndoToken('x', () async {}));
+      await h.pump(tester, const TodayScreen());
+
+      await tester.ensureVisible(find.text('1 h untracked'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1 h untracked'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('fill-gap-suggestion-a2')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => h.writer.insertEntry(
+          name: 'Reading',
+          startUtc: DateTime.utc(2026, 3, 10, 12),
+          endUtc: DateTime.utc(2026, 3, 10, 13),
+        ),
+      ).called(1);
     });
 
     testWidgets('an unnamed entry cannot be added', (tester) async {

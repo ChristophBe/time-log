@@ -256,7 +256,12 @@ void main() {
 
       expect(
         tester
-            .widget<TextField>(find.byKey(const Key('start-field')))
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const Key('start-field')),
+                matching: find.byType(TextField),
+              ),
+            )
             .controller!
             .text,
         isEmpty,
@@ -332,7 +337,12 @@ void main() {
 
       expect(
         tester
-            .widget<TextField>(find.byKey(const Key('start-field')))
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const Key('start-field')),
+                matching: find.byType(TextField),
+              ),
+            )
             .focusNode!
             .hasFocus,
         isTrue,
@@ -389,7 +399,12 @@ void main() {
 
       expect(
         tester
-            .widget<TextField>(find.byKey(const Key('start-field')))
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const Key('start-field')),
+                matching: find.byType(TextField),
+              ),
+            )
             .controller!
             .text,
         isEmpty,

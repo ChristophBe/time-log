@@ -3,9 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/design.dart';
 import '../../app/palette.dart';
+import '../../core/clock.dart';
+import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/timeline_writer.dart';
 import '../today/action_feedback.dart';
+import '../today/today_providers.dart';
+import 'activity_input.dart';
+import 'entry_providers.dart';
 
 /// Rename and recolour an activity (SPEC §6.7).
 ///
@@ -34,20 +39,20 @@ class ActivityEditor extends ConsumerStatefulWidget {
 }
 
 class _ActivityEditorState extends ConsumerState<ActivityEditor> {
-  late final TextEditingController _name = TextEditingController(
+  late final ActivityInputController _input = ActivityInputController(
     text: widget.activity.name,
   );
   late int _seed = widget.activity.colorSeed;
 
   @override
   void dispose() {
-    _name.dispose();
+    _input.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final writer = ref.read(timelineWriterProvider);
-    final name = _name.text.trim();
+    final name = _input.typedName;
     final messages = <String>[];
     UndoToken? undo;
 
@@ -76,9 +81,38 @@ class _ActivityEditorState extends ConsumerState<ActivityEditor> {
     showUndoableFeedback(context, message: messages.join(' · '), undo: undo);
   }
 
+  /// The other activity that [name] would fold this one into, if any.
+  Activity? _mergeTarget(String name, Map<String, Activity> activities) {
+    final key = Activity.keyFor(name);
+    for (final other in activities.values) {
+      if (other.id != widget.activity.id && other.nameKey == key) return other;
+    }
+    return null;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _input.listenable,
+    builder: (context, _) => _buildSheet(context),
+  );
+
+  Widget _buildSheet(BuildContext context) {
     final brightness = Theme.of(context).brightness;
+    final suggestions =
+        ref
+            .watch(
+              activityInputSuggestionsProvider(
+                _input.query,
+                widget.activity.id,
+              ),
+            )
+            .value ??
+        const <ActivitySuggestion>[];
+    final now = ref.watch(appClockProvider).nowUtc();
+    final target = _mergeTarget(
+      _input.typedName,
+      ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{},
+    );
 
     return SafeArea(
       child: Padding(
@@ -94,15 +128,28 @@ class _ActivityEditorState extends ConsumerState<ActivityEditor> {
           children: <Widget>[
             Text('Activity', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: Insets.md),
-            TextField(
+            ActivityInputField(
               key: const Key('activity-name'),
-              controller: _name,
-              maxLength: Activity.maxNameLength,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Name',
-                counterText: '',
-                helperText: 'An existing name merges the two together.',
+              controller: _input,
+              suggestions: suggestions,
+              // Enter confirms the name; a suggestion fills the field instead
+              // (see onPick), because Save also carries the colour.
+              onSubmit: (name) {
+                _input.fill(name);
+                return _save();
+              },
+              label: 'Name',
+              helper: target == null
+                  ? 'An existing name merges the two together.'
+                  : 'Merges into “${target.name}”: every entry moves over.',
+            ),
+            Flexible(
+              child: ActivityInputSuggestions(
+                controller: _input,
+                suggestions: suggestions,
+                now: now,
+                onPick: _input.fill,
+                keyPrefix: 'editor-suggestion',
               ),
             ),
             const SizedBox(height: Insets.lg),
@@ -125,9 +172,7 @@ class _ActivityEditorState extends ConsumerState<ActivityEditor> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: Activity.isValidName(_name.text.trim())
-                    ? _save
-                    : null,
+                onPressed: _input.isValid ? _save : null,
                 child: const Text('Save'),
               ),
             ),

@@ -12,7 +12,8 @@ import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/time_entry_repository.dart';
 import '../../domain/models/activity.dart';
 import '../../domain/models/app_settings.dart';
-import '../entry/activity_suggestion_row.dart';
+import '../entry/activity_input.dart';
+import '../entry/entry_providers.dart';
 import 'start_action.dart';
 import 'today_providers.dart';
 
@@ -22,40 +23,12 @@ import 'today_providers.dart';
 /// `bottomNavigationBar`, the panel over the calendar -- so what was typed, what
 /// has focus and which row is highlighted has to live above both. Owned and
 /// disposed by `TodayScreen`.
-class StartComposerState {
-  StartComposerState()
-    : text = TextEditingController(),
-      focus = FocusNode(debugLabel: 'start composer'),
-      highlighted = ValueNotifier<int>(-1);
-
-  final TextEditingController text;
-  final FocusNode focus;
-
-  /// Which suggestion Enter would pick. -1 means "use what is typed".
-  final ValueNotifier<int> highlighted;
-
-  /// Rebuilds anything that cares about any of the three.
-  Listenable get listenable =>
-      Listenable.merge(<Listenable>[text, focus, highlighted]);
+class StartComposerState extends ActivityInputController {
+  StartComposerState() : super(debugLabel: 'start composer');
 
   /// The suggestion panel is only worth its space once the user has shown
   /// interest; at rest the day gets the screen.
   bool get isActive => focus.hasFocus || text.text.isNotEmpty;
-
-  String get query => text.text;
-
-  String get typedName => text.text.trim();
-
-  void reset() {
-    text.clear();
-    highlighted.value = -1;
-  }
-
-  void dispose() {
-    text.dispose();
-    focus.dispose();
-    highlighted.dispose();
-  }
 }
 
 /// The field and the Start button, docked to the bottom of Today
@@ -86,61 +59,21 @@ class StartComposerBar extends ConsumerStatefulWidget {
 }
 
 class _StartComposerBarState extends ConsumerState<StartComposerBar> {
-  /// A physical Enter fires both `onSubmitted` and the raw key event, and a
-  /// double tap on a row arrives twice. Either would start twice.
-  bool _starting = false;
-
   StartComposerState get _state => widget.state;
 
   Future<void> _start(String name) async {
-    if (_starting) return;
-    _starting = true;
     // Reset first: the field should be empty the instant it is committed, not
     // after the write round-trips.
     _state.reset();
     widget.onRelease();
-    try {
-      await startActivityNamed(context, ref, name);
-    } finally {
-      _starting = false;
-    }
+    await startActivityNamed(context, ref, name);
   }
 
-  void _submitTyped() {
-    final name = _state.typedName;
-    if (!Activity.isValidName(name)) return;
-    _start(name);
-  }
-
-  KeyEventResult _onKey(List<ActivitySuggestion> suggestions, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final highlighted = _state.highlighted;
-    switch (event.logicalKey) {
-      case LogicalKeyboardKey.arrowDown:
-        highlighted.value = suggestions.isEmpty
-            ? -1
-            : (highlighted.value + 1).clamp(0, suggestions.length - 1);
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.arrowUp:
-        highlighted.value = highlighted.value <= 0 ? -1 : highlighted.value - 1;
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.escape:
-        // There is no modal to dismiss any more, so Escape abandons what was
-        // typed and hands the screen back to the day.
-        _state.reset();
-        widget.onRelease();
-        return KeyEventResult.handled;
-      case LogicalKeyboardKey.enter:
-      case LogicalKeyboardKey.numpadEnter:
-        if (highlighted.value >= 0 && highlighted.value < suggestions.length) {
-          _start(suggestions[highlighted.value].activity.name);
-        } else {
-          _submitTyped();
-        }
-        return KeyEventResult.handled;
-      default:
-        return KeyEventResult.ignored;
-    }
+  void _abandon() {
+    // There is no modal to dismiss any more, so Escape abandons what was
+    // typed and hands the screen back to the day.
+    _state.reset();
+    widget.onRelease();
   }
 
   @override
@@ -148,9 +81,15 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
     animation: _state.listenable,
     builder: (context, _) {
       final suggestions =
-          ref.watch(activitySuggestionsProvider(_state.query)).value ??
+          ref
+              .watch(
+                activityInputSuggestionsProvider(
+                  _state.query,
+                  ref.watch(runningEntryProvider).value?.activityId,
+                ),
+              )
+              .value ??
           const <ActivitySuggestion>[];
-      final canStart = Activity.isValidName(_state.text.text);
 
       return Shortcuts(
         // TodayScreen binds bare T and the horizontal arrows to day navigation
@@ -198,24 +137,15 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
                 child: Row(
                   children: <Widget>[
                     Expanded(
-                      child: Focus(
-                        onKeyEvent: (_, event) => _onKey(suggestions, event),
-                        child: TextField(
-                          key: const Key('start-field'),
-                          controller: _state.text,
-                          focusNode: _state.focus,
-                          textInputAction: TextInputAction.go,
-                          maxLength: Activity.maxNameLength,
-                          decoration: const InputDecoration(
-                            labelText: 'What now?',
-                            hintText: 'Type what you are doing',
-                            // The field is the only control here; a character
-                            // counter under it would just add a line of noise.
-                            counterText: '',
-                          ),
-                          onChanged: (_) => _state.highlighted.value = -1,
-                          onSubmitted: (_) => _submitTyped(),
-                        ),
+                      child: ActivityInputField(
+                        key: const Key('start-field'),
+                        controller: _state,
+                        suggestions: suggestions,
+                        onSubmit: _start,
+                        onEscape: _abandon,
+                        textInputAction: TextInputAction.go,
+                        label: 'What now?',
+                        hint: 'Type what you are doing',
                       ),
                     ),
                     const SizedBox(width: Insets.sm),
@@ -223,7 +153,9 @@ class _StartComposerBarState extends ConsumerState<StartComposerBar> {
                     // so creation is never a mode (SPEC §8.3).
                     FilledButton.icon(
                       key: const Key('start-button'),
-                      onPressed: canStart ? _submitTyped : null,
+                      onPressed: _state.isValid
+                          ? () => _start(_state.typedName)
+                          : null,
                       icon: const Icon(Icons.play_arrow_rounded),
                       label: const Text('Start'),
                     ),
@@ -276,10 +208,17 @@ class StartSuggestionPanel extends ConsumerWidget {
   );
 
   Widget _panel(BuildContext context, WidgetRef ref) {
-    final suggestions =
-        ref.watch(activitySuggestionsProvider(state.query)).value ??
-        const <ActivitySuggestion>[];
     final running = ref.watch(runningEntryProvider).value;
+    final suggestions =
+        ref
+            .watch(
+              activityInputSuggestionsProvider(
+                state.query,
+                running?.activityId,
+              ),
+            )
+            .value ??
+        const <ActivitySuggestion>[];
     final activities =
         ref.watch(activitiesByIdProvider).value ?? const <String, Activity>{};
     final settings =
@@ -355,25 +294,14 @@ class StartSuggestionPanel extends ConsumerWidget {
                                         ),
                                   ),
                                 ))
-                        : ListView.builder(
-                            shrinkWrap: true,
+                        : ActivityInputSuggestions(
+                            controller: state,
+                            suggestions: suggestions,
+                            now: now,
+                            onPick: onPick,
                             padding: const EdgeInsets.symmetric(
                               vertical: Insets.sm,
                             ),
-                            itemCount: suggestions.length,
-                            itemBuilder: (context, index) =>
-                                ValueListenableBuilder<int>(
-                                  valueListenable: state.highlighted,
-                                  builder: (context, highlighted, _) =>
-                                      ActivitySuggestionRow(
-                                        suggestion: suggestions[index],
-                                        highlighted: index == highlighted,
-                                        now: now,
-                                        onTap: () => onPick(
-                                          suggestions[index].activity.name,
-                                        ),
-                                      ),
-                                ),
                           ),
                   ),
                   if (running != null)

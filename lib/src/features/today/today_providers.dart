@@ -101,18 +101,6 @@ DayTotals dayTotals(Ref ref) {
   return computeDayTotals(entries: entries, window: window, now: now);
 }
 
-@riverpod
-Stream<List<ActivitySuggestion>> activitySuggestions(Ref ref, String query) {
-  final running = ref.watch(runningEntryProvider).value;
-  return ref
-      .watch(timeEntryRepositoryProvider)
-      .watchSuggestions(
-        now: ref.watch(appClockProvider).nowUtc(),
-        query: query,
-        excludeActivityId: running?.activityId,
-      );
-}
-
 /// When the current run began, following back through the entries SPEC §6.11
 /// cut apart at midnight -- so a clock left on overnight reports eight hours
 /// rather than however long it is since 00:00 (SPEC §8.1).

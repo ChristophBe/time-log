@@ -97,22 +97,24 @@ final class EntryNeighboursFamily extends $Family
   String toString() => r'entryNeighboursProvider';
 }
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked against what has been typed (SPEC §9.6), for every place
+/// an activity name is entered.
 ///
-/// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// [excludeActivityId] is the one activity that would be a no-op to pick: the
+/// running one when starting, the entry's own when relabelling it. Null where
+/// every activity is a fair answer.
 
-@ProviderFor(relabelSuggestions)
-final relabelSuggestionsProvider = RelabelSuggestionsFamily._();
+@ProviderFor(activityInputSuggestions)
+final activityInputSuggestionsProvider = ActivityInputSuggestionsFamily._();
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked against what has been typed (SPEC §9.6), for every place
+/// an activity name is entered.
 ///
-/// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// [excludeActivityId] is the one activity that would be a no-op to pick: the
+/// running one when starting, the entry's own when relabelling it. Null where
+/// every activity is a fair answer.
 
-final class RelabelSuggestionsProvider
+final class ActivityInputSuggestionsProvider
     extends
         $FunctionalProvider<
           AsyncValue<List<ActivitySuggestion>>,
@@ -122,28 +124,29 @@ final class RelabelSuggestionsProvider
     with
         $FutureModifier<List<ActivitySuggestion>>,
         $StreamProvider<List<ActivitySuggestion>> {
-  /// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+  /// Activities ranked against what has been typed (SPEC §9.6), for every place
+  /// an activity name is entered.
   ///
-  /// The same ranking the start composer uses, excluding a different activity:
-  /// there, picking the running one would be a no-op; here it is the entry's
-  /// current one.
-  RelabelSuggestionsProvider._({
-    required RelabelSuggestionsFamily super.from,
-    required (String, String) super.argument,
+  /// [excludeActivityId] is the one activity that would be a no-op to pick: the
+  /// running one when starting, the entry's own when relabelling it. Null where
+  /// every activity is a fair answer.
+  ActivityInputSuggestionsProvider._({
+    required ActivityInputSuggestionsFamily super.from,
+    required (String, String?) super.argument,
   }) : super(
          retry: null,
-         name: r'relabelSuggestionsProvider',
+         name: r'activityInputSuggestionsProvider',
          isAutoDispose: true,
          dependencies: null,
          $allTransitiveDependencies: null,
        );
 
   @override
-  String debugGetCreateSourceHash() => _$relabelSuggestionsHash();
+  String debugGetCreateSourceHash() => _$activityInputSuggestionsHash();
 
   @override
   String toString() {
-    return r'relabelSuggestionsProvider'
+    return r'activityInputSuggestionsProvider'
         ''
         '$argument';
   }
@@ -156,13 +159,14 @@ final class RelabelSuggestionsProvider
 
   @override
   Stream<List<ActivitySuggestion>> create(Ref ref) {
-    final argument = this.argument as (String, String);
-    return relabelSuggestions(ref, argument.$1, argument.$2);
+    final argument = this.argument as (String, String?);
+    return activityInputSuggestions(ref, argument.$1, argument.$2);
   }
 
   @override
   bool operator ==(Object other) {
-    return other is RelabelSuggestionsProvider && other.argument == argument;
+    return other is ActivityInputSuggestionsProvider &&
+        other.argument == argument;
   }
 
   @override
@@ -171,42 +175,46 @@ final class RelabelSuggestionsProvider
   }
 }
 
-String _$relabelSuggestionsHash() =>
-    r'651994075f4eea39c1a7b849d06b3f724aafd0b7';
+String _$activityInputSuggestionsHash() =>
+    r'fd083d27e990956e10333ddbd442eb911d0ae2fb';
 
-/// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+/// Activities ranked against what has been typed (SPEC §9.6), for every place
+/// an activity name is entered.
 ///
-/// The same ranking the start composer uses, excluding a different activity:
-/// there, picking the running one would be a no-op; here it is the entry's
-/// current one.
+/// [excludeActivityId] is the one activity that would be a no-op to pick: the
+/// running one when starting, the entry's own when relabelling it. Null where
+/// every activity is a fair answer.
 
-final class RelabelSuggestionsFamily extends $Family
+final class ActivityInputSuggestionsFamily extends $Family
     with
         $FunctionalFamilyOverride<
           Stream<List<ActivitySuggestion>>,
-          (String, String)
+          (String, String?)
         > {
-  RelabelSuggestionsFamily._()
+  ActivityInputSuggestionsFamily._()
     : super(
         retry: null,
-        name: r'relabelSuggestionsProvider',
+        name: r'activityInputSuggestionsProvider',
         dependencies: null,
         $allTransitiveDependencies: null,
         isAutoDispose: true,
       );
 
-  /// Activities ranked for relabelling one entry (SPEC §6.10, §9.6).
+  /// Activities ranked against what has been typed (SPEC §9.6), for every place
+  /// an activity name is entered.
   ///
-  /// The same ranking the start composer uses, excluding a different activity:
-  /// there, picking the running one would be a no-op; here it is the entry's
-  /// current one.
+  /// [excludeActivityId] is the one activity that would be a no-op to pick: the
+  /// running one when starting, the entry's own when relabelling it. Null where
+  /// every activity is a fair answer.
 
-  RelabelSuggestionsProvider call(String excludeActivityId, String query) =>
-      RelabelSuggestionsProvider._(
-        argument: (excludeActivityId, query),
-        from: this,
-      );
+  ActivityInputSuggestionsProvider call(
+    String query,
+    String? excludeActivityId,
+  ) => ActivityInputSuggestionsProvider._(
+    argument: (query, excludeActivityId),
+    from: this,
+  );
 
   @override
-  String toString() => r'relabelSuggestionsProvider';
+  String toString() => r'activityInputSuggestionsProvider';
 }

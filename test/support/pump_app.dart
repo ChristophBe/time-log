@@ -152,14 +152,10 @@ class WidgetHarness {
             (ref) async => runStart ?? running?.startUtc,
           ),
           entryNeighboursProvider.overrideWith((ref, id) async => neighbours),
-          activitySuggestionsProvider.overrideWith(
-            (ref, query) =>
-                Stream<List<ActivitySuggestion>>.value(_matching(query)),
-          ),
-          // The entry sheet's picker ranks the same way but excludes the
-          // entry's own activity rather than the running one (SPEC §6.10).
-          relabelSuggestionsProvider.overrideWith((ref, args) {
-            final (excludeActivityId, query) = args;
+          // Every activity input ranks the same way; what differs is the one
+          // activity it leaves out (the running one, the entry's own, none).
+          activityInputSuggestionsProvider.overrideWith((ref, args) {
+            final (query, excludeActivityId) = args;
             return Stream<List<ActivitySuggestion>>.value(
               _matching(query)
                   .where((s) => s.activity.id != excludeActivityId)
