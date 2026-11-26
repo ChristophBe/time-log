@@ -81,8 +81,8 @@ without a Gatekeeper warning. This is direct distribution, not the App Store.
 SKIP_NOTARIZE=1 ./tool/release_macos.sh   # build and sign only, no round trip to Apple
 ```
 
-Pushing a `v<version>` tag runs this same script on a CI runner and attaches the result to a draft
-GitHub Release, along with the other platforms' artefacts — see [CI](#ci). Running it locally stays
+Every green push to `main` is tagged with the next version and runs this same script on a CI runner,
+attaching the result to a published GitHub Release, along with the other platforms' artefacts — see [CI](#ci). Running it locally stays
 supported and is the faster way to debug a signing problem.
 
 Notarising needs credentials in the keychain once per machine. An App Store Connect API key
@@ -178,9 +178,14 @@ generated file would otherwise pass everything. The macOS build job signs with t
 when the secrets are present, which also runs the release script's notarisation preflight on every
 push instead of saving the surprise for a release; without the secrets it builds Debug and says so.
 
-`.github/workflows/release.yml` turns a `v*` tag into a draft GitHub Release: a notarised `.dmg`
-from `tool/release_macos.sh`, a Windows zip and a Linux tarball. It refuses
-to run if the tag and `pubspec.yaml` disagree about the version. Nothing above the release row needs a secret; the
+`.github/workflows/version.yml` runs after `ci` succeeds on `main` and tags the commit with the next
+semantic version, decided by `tool/ci/next_version.sh` from the commit messages since the last tag
+(Conventional Commits): `type!:` or a `BREAKING CHANGE` footer bumps major, `feat:` bumps minor,
+anything else bumps patch. The first release is `v0.1.0`. Use Conventional Commit titles for PRs.
+`.github/workflows/release.yml` then publishes a GitHub Release: a notarised `.dmg`
+from `tool/release_macos.sh`, a Windows zip and a Linux tarball. The version
+comes from the tag and is injected with `--build-name`, so `version:` in `pubspec.yaml` is only a
+placeholder. A hand-pushed `v*` tag runs the same release. Nothing above the release row needs a secret; the
 notarised `.dmg` needs five, and `tool/ci/` holds the two scripts that put them where the release
 script expects to find them.
 

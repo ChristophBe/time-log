@@ -1,6 +1,11 @@
 # A `v*` tag cuts a GitHub Release with something installable for every desktop
 # platform the repo can actually sign for.
 #
+# Tags normally come from version.yml, which tags every green push to main and
+# calls this workflow directly (a tag pushed with GITHUB_TOKEN triggers nothing).
+# A hand-pushed `v*` tag still works. Either way the version comes from the tag,
+# not pubspec.yaml, and is injected with --build-name.
+#
 # The macOS artefact is the interesting one: it is built by tool/release_macos.sh,
 # the same script used by hand, so there is one definition of "a release build"
 # rather than one in bash and a second in YAML.
@@ -9,6 +14,13 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      version:
+        description: Semantic version without the leading v
+        required: true
+        type: string
+
 
 permissions:
   contents: write
@@ -18,24 +30,19 @@ env:
   FLUTTER_VERSION: 3.47.6
 
 jobs:
-  # The DMG takes its name from pubspec, not from the tag, so a mismatch would
-  # quietly publish time-log-0.1.0.dmg under a v0.2.0 release.
   guard:
-    name: tag matches pubspec
+    name: resolve version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
       - id: version
+        env:
+          INPUT: ${{ inputs.version }}
         run: |
-          version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)"
-          if [ -z "$version" ]; then
-            echo '::error::could not read version from pubspec.yaml'
-            exit 1
-          fi
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match pubspec version $version"
+          version="${INPUT:-${GITHUB_REF_NAME#v}}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$version' is not a semantic version"
             exit 1
           fi
           echo "version=$version" >>"$GITHUB_OUTPUT"
@@ -45,6 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.guard.outputs.version }}
       - name: Desktop toolchain
         run: |
           sudo apt-get update
@@ -60,7 +69,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build linux --release
+      - run: flutter build linux --release --build-name=${{ needs.guard.outputs.version }} --build-number=${{ github.run_number }}
       - name: Stage
         env:
           V: ${{ needs.guard.outputs.version }}
@@ -78,6 +87,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.guard.outputs.version }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -88,7 +99,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build windows --release
+      - run: flutter build windows --release --build-name=${{ needs.guard.outputs.version }} --build-number=${{ github.run_number }}
       - name: Stage
         shell: pwsh
         env:
@@ -107,6 +118,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.guard.outputs.version }}
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -130,6 +143,9 @@ jobs:
       # Signs, verifies, notarises, staples and packages. Unlike every other job
       # here this one is not "build and zip" — the script is the release.
       - name: Build, sign, notarise and package
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: ./tool/release_macos.sh
 
       - name: Stage
@@ -162,7 +178,8 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
-          draft: true
+          tag_name: v${{ needs.guard.outputs.version }}
+          draft: false
           generate_release_notes: true
           body: |
             ### Artefacts

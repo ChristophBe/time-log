@@ -1,0 +1,61 @@
+# Tags every green push to main with the next semantic version and releases it.
+#
+# Runs after ci rather than beside it, so a broken main never gets a release. The
+# bump is decided by tool/ci/next_version.sh from the commit messages since the
+# last tag (Conventional Commits: `feat` -> minor, `!` / BREAKING CHANGE -> major,
+# anything else -> patch).
+#
+# The release is a called workflow, not a tag trigger: a tag pushed with
+# GITHUB_TOKEN deliberately starts no workflows.
+name: version
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Serialised, never cancelled: two pushes must not compute the same version.
+concurrency:
+  group: version
+
+jobs:
+  tag:
+    name: tag next version
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - id: next
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # An older green run finishing after a newer one was tagged must not
+          # tag a commit that is already part of a release.
+          if git describe --tags --match 'v[0-9]*' --exact-match "$SHA" >/dev/null 2>&1 \
+             || git tag --contains "$SHA" --list 'v[0-9]*' | grep -q .; then
+            echo "$SHA is already released"
+            exit 0
+          fi
+          version="$(tool/ci/next_version.sh)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v$version" -m "v$version" "$SHA"
+          git push origin "v$version"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.version != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.tag.outputs.version }}
+    secrets: inherit
