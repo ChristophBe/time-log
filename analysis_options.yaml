@@ -15,8 +15,6 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
-    - android/**
-    - ios/**
 
 linter:
   rules:
