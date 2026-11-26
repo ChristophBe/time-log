@@ -7,6 +7,7 @@ import 'package:time_log/src/domain/timeline_writer.dart';
 import 'package:time_log/src/features/projects/projects_screen.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §8.7: the Projects destination.
 void main() {
@@ -169,7 +170,7 @@ void main() {
     await pumpScreen(tester);
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
     handle.dispose();
   });
 }

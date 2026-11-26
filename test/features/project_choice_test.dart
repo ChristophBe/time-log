@@ -10,6 +10,7 @@ import 'package:time_log/src/features/entry/entry_sheet.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §6.12, §8.1, §8.3, §8.4: choosing an entry's project when starting,
 /// while it runs, and afterwards.
@@ -209,7 +210,7 @@ void main() {
     ).pump(tester, const TodayScreen());
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
     handle.dispose();
   });
 }
