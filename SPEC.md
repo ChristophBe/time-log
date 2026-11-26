@@ -489,6 +489,14 @@ The app does not throw an error for a gesture that was merely over-eager. **Type
 violates a clamp *is* reported, inline, naming the conflict ("that would leave *Email* under 1
 minute").
 
+**Grabbing an edge.** A block's top and bottom edges are drag handles: a strip along each, as tall
+as a finger needs (24 px) but never more than a third of the block, so a short block keeps a middle
+that still taps and scrolls. A drag that starts on a strip resizes at once, with no long press. A
+drag that starts anywhere else on the block is still the scroll view's. A long press on a block, then
+a drag, also resizes: the top half takes the start and the bottom half the end. This is the route for
+anyone who finds the strips too small to hit. Both routes feed one preview and one commit, so they
+cannot disagree.
+
 A drag keeps the **grab offset**: the boundary moves by as much as the finger moves, rather than
 jumping to wherever the finger first landed. Grabbing an edge should not itself change anything.
 
@@ -499,7 +507,8 @@ Snapping applies to the resulting instant, not to the delta, so a block edited t
 
 ### 7.4 The running entry
 
-Its end is "now" and is not editable; the bottom of the running block has no drag handle. Its start
+Its end is "now" and is not editable; the bottom of the running block has no drag handle, and a long press on its bottom half does
+nothing. Its start
 is editable like any other free or shared boundary.
 
 The entry *before* it is editable in full, including the boundary the two share, which follows §7.1
@@ -598,8 +607,9 @@ tells you nothing, and the date is the real title of this screen.
   height 18 px so short entries stay visible and hittable; labels drop out progressively (duration
   first, then name) when the block is shorter than the lines themselves need **at the reader's text
   scale**, and the full text stays in the semantics label and the sheet. A selected or focused block
-  shows grab pucks on its edges; they are decoration, and the drag targets remain the whole top and
-  bottom halves. Where several sub-snap entries
+  shows grab pucks on its edges as a hint; the drag handles (§7.2) are the strips along the edges and
+  exist whether or not the block is selected. A block has no handle on an edge that is not its own:
+  the cut edge of an entry clipped by midnight, or the end of the running entry. Where several sub-snap entries
   would collide visually, they render as one "*n* short entries" chip that expands on tap or zoom.
 - **Gaps**: untracked ranges over 5 minutes are shown as a shallow recess under a sparse hatch,
   labelled with their length, tappable to create an entry filling exactly that gap. Quiet on
@@ -1022,7 +1032,7 @@ feature that fails them is not done.
 
 | Gesture | Equivalent |
 | --- | --- |
-| Long-press an edge, then drag, to resize (a plain vertical drag belongs to the scroll view) | Entry sheet Start/End/Duration fields + `−`/`+` steppers; `onIncrease`/`onDecrease` semantics actions on the block, whose `value` is the entry's duration; keyboard shortcuts (§10.5) |
+| Drag an edge strip, or long-press a block and drag, to resize (a plain vertical drag on the body belongs to the scroll view) | Entry sheet Start/End/Duration fields + `−`/`+` steppers; `onIncrease`/`onDecrease` semantics actions on the block, whose `value` is the entry's duration; keyboard shortcuts (§10.5) |
 | Pinch to zoom | Zoom buttons; `Ctrl`/`Cmd`+scroll; a zoom setting |
 | Swipe between days | `←`/`→`, date header picker, Today action |
 | Swipe row to delete | Long-press context menu; sheet action |
@@ -1186,6 +1196,10 @@ deleted project counting as none.
 `theBoundaryBeforeTheRunningEntryIsEditable` · `anOverlapTrimsTheNeighbourWithoutAsking` ·
 `movingASharedBoundaryAwayAsksBeforeMovingTheNeighbour` ·
 `typedTrimBelowTheMinimumIsRejectedWithNamedConflict`.
+
+**Widget — edge dragging (§7.2).** `dragTheBottomStripMovesTheEndWithoutALongPress` ·
+`dragTheTopStripMovesTheStart` · `longPressThenDragStillResizes` ·
+`theRunningEntryHasNoEndHandle`.
 
 **Unit — day/zone logic (§5.3).** `entryCrossingMidnightRendersInBothDays` ·
 `dayTotalsClipToDayWindow` · `dstShortDayHas23HourAxis` · `dstLongDayHas25HourAxis` ·

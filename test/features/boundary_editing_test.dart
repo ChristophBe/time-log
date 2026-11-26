@@ -336,6 +336,67 @@ void main() {
       );
     });
 
+    testWidgets('dragging the bottom edge strip moves the end, no long press', (
+      tester,
+    ) async {
+      final h = calendarHarness();
+      stubMoves(h.writer);
+      await h.pump(tester, const TodayScreen());
+
+      final block = find.byKey(const ValueKey<String>('block-e1'));
+      await tester.ensureVisible(block);
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(block);
+      final gesture = await tester.startGesture(
+        Offset(box.center.dx, box.bottom - 6),
+      );
+      await gesture.moveBy(const Offset(0, 36));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final captured = verify(
+        () => h.writer.moveBoundary(
+          entryId: 'e1',
+          edge: captureAny(named: 'edge'),
+          desired: captureAny(named: 'desired'),
+          snap: any(named: 'snap'),
+        ),
+      ).captured;
+      expect(captured.first, BoundaryEdge.end);
+    });
+
+    testWidgets('dragging the top edge strip moves the start', (tester) async {
+      final h = calendarHarness();
+      stubMoves(h.writer);
+      await h.pump(tester, const TodayScreen());
+
+      final block = find.byKey(const ValueKey<String>('block-e1'));
+      await tester.ensureVisible(block);
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(block);
+      final gesture = await tester.startGesture(
+        Offset(box.center.dx, box.top + 6),
+      );
+      // Past the touch slop, which swallows the first 18 px.
+      await gesture.moveBy(const Offset(0, 36));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final captured = verify(
+        () => h.writer.moveBoundary(
+          entryId: 'e1',
+          edge: captureAny(named: 'edge'),
+          desired: captureAny(named: 'desired'),
+          snap: any(named: 'snap'),
+        ),
+      ).captured;
+      expect(captured.first, BoundaryEdge.start);
+    });
+
     testWidgets('a drag shows a live readout of the time it would land on', (
       tester,
     ) async {
@@ -393,6 +454,23 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
 
+      verifyNever(
+        () => h.writer.moveBoundary(
+          entryId: any(named: 'entryId'),
+          edge: BoundaryEdge.end,
+          desired: any(named: 'desired'),
+          snap: any(named: 'snap'),
+        ),
+      );
+
+      // The strip is absent too, so a plain drag there is not a resize.
+      final strip = await tester.startGesture(
+        Offset(box.center.dx, box.bottom - 6),
+      );
+      await strip.moveBy(const Offset(0, 36));
+      await tester.pump();
+      await strip.up();
+      await tester.pumpAndSettle();
       verifyNever(
         () => h.writer.moveBoundary(
           entryId: any(named: 'entryId'),
