@@ -155,6 +155,41 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
       ? BoundaryEdge.start
       : BoundaryEdge.end;
 
+  /// Start dragging [edge] of [entry]; shared by the long press and the edge
+  /// strips so both feed the same preview and commit.
+  void _beginDrag(
+    TimeEntry entry,
+    BoundaryEdge edge,
+    Offset global,
+    ({DateTime start, DateTime end}) times,
+    CalendarMetrics metrics,
+  ) {
+    if (edge == BoundaryEdge.end && entry.isRunning) return;
+    final dy = _axisDy(global);
+    if (dy == null) return;
+    final boundary = edge == BoundaryEdge.start ? times.start : times.end;
+    setState(
+      () => _drag = _DragState(
+        entryId: entry.id,
+        edge: edge,
+        desiredUtc: boundary,
+        grabOffsetPx: dy - metrics.offsetFor(boundary),
+      ),
+    );
+  }
+
+  void _updateDrag(Offset global, CalendarMetrics metrics) {
+    final drag = _drag;
+    if (drag == null) return;
+    final instant = _instantAtGlobal(
+      global,
+      metrics,
+      grabOffsetPx: drag.grabOffsetPx,
+    );
+    if (instant == null) return;
+    setState(() => _drag = drag.withDesired(instant));
+  }
+
   /// The move the current drag would commit, computed with the same pure
   /// function the writer uses, so the preview cannot disagree with the result.
   BoundaryMove? _previewMove({
@@ -543,37 +578,16 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
         // Long press then drag, so a plain vertical drag still scrolls.
         onLongPressStart: !canEdit
             ? null
-            : (details) {
-                final edge = _edgeFor(details.localPosition, height);
-                if (edge == BoundaryEdge.end && entry.isRunning) return;
-                final dy = _axisDy(details.globalPosition);
-                if (dy == null) return;
-                final boundary = edge == BoundaryEdge.start
-                    ? times.start
-                    : times.end;
-                final grabOffset = dy - metrics.offsetFor(boundary);
-                setState(
-                  () => _drag = _DragState(
-                    entryId: entry.id,
-                    edge: edge,
-                    desiredUtc: boundary,
-                    grabOffsetPx: grabOffset,
-                  ),
-                );
-              },
+            : (details) => _beginDrag(
+                entry,
+                _edgeFor(details.localPosition, height),
+                details.globalPosition,
+                times,
+                metrics,
+              ),
         onLongPressMoveUpdate: !canEdit
             ? null
-            : (details) {
-                final drag = _drag;
-                if (drag == null) return;
-                final instant = _instantAtGlobal(
-                  details.globalPosition,
-                  metrics,
-                  grabOffsetPx: drag.grabOffsetPx,
-                );
-                if (instant == null) return;
-                setState(() => _drag = drag.withDesired(instant));
-              },
+            : (details) => _updateDrag(details.globalPosition, metrics),
         onLongPressEnd: !canEdit ? null : (_) => _commitDrag(settings.snap),
         onLongPressCancel: () => setState(() => _drag = null),
         child: CallbackShortcuts(
@@ -625,6 +639,13 @@ class DayCalendarState extends ConsumerState<DayCalendar> {
                     _drag?.entryId == entry.id ||
                     Focus.of(context).hasFocus,
                 onTap: canEdit ? () => widget.onEntryTap!(entry) : null,
+                onEdgeDragStart: !canEdit
+                    ? null
+                    : (edge, global) =>
+                          _beginDrag(entry, edge, global, times, metrics),
+                onEdgeDragUpdate: (global) => _updateDrag(global, metrics),
+                onEdgeDragEnd: () => _commitDrag(settings.snap),
+                onEdgeDragCancel: () => setState(() => _drag = null),
                 onAdjustStart: !canEdit
                     ? null
                     : (delta) => _adjustStart(entry, delta, settings.snap),

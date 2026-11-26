@@ -6,6 +6,7 @@ import '../../app/theme.dart';
 import '../../core/formatters.dart';
 import '../../domain/timeline/day_timeline.dart';
 import '../../domain/timeline/invariants.dart';
+import '../../domain/timeline/timeline_math.dart';
 
 /// One entry drawn on the calendar (SPEC §8.2).
 ///
@@ -33,6 +34,10 @@ class EntryBlock extends StatelessWidget {
     this.onTap,
     this.onAdjustStart,
     this.onAdjustEnd,
+    this.onEdgeDragStart,
+    this.onEdgeDragUpdate,
+    this.onEdgeDragEnd,
+    this.onEdgeDragCancel,
     this.selected = false,
     super.key,
   });
@@ -50,7 +55,17 @@ class EntryBlock extends StatelessWidget {
   final VoidCallback? onTap;
   final void Function(Duration delta)? onAdjustStart;
   final void Function(Duration delta)? onAdjustEnd;
+
+  /// Dragging an edge strip directly; null turns the strips off.
+  final void Function(BoundaryEdge edge, Offset global)? onEdgeDragStart;
+  final void Function(Offset global)? onEdgeDragUpdate;
+  final VoidCallback? onEdgeDragEnd;
+  final VoidCallback? onEdgeDragCancel;
   final bool selected;
+
+  /// Tall enough to hit with a finger, but never more than a third of the
+  /// block, so a short block keeps a middle that still taps and scrolls.
+  double get handleHeight => height / 3 < 24 ? height / 3 : 24;
 
   /// An edge the entry carries on past is drawn open: square, and with no
   /// hairline of air under it.
@@ -215,6 +230,26 @@ class EntryBlock extends StatelessWidget {
                 ),
                 if (showsPucks)
                   _Pucks(color: colors.onFill, hasTop: onAdjustStart != null),
+                if (onEdgeDragStart != null) ...<Widget>[
+                  if (onAdjustStart != null && !segment.continuesBefore)
+                    _EdgeHandle(
+                      edge: BoundaryEdge.start,
+                      height: handleHeight,
+                      onStart: onEdgeDragStart!,
+                      onUpdate: onEdgeDragUpdate,
+                      onEnd: onEdgeDragEnd,
+                      onCancel: onEdgeDragCancel,
+                    ),
+                  if (onAdjustEnd != null && !segment.continuesAfter)
+                    _EdgeHandle(
+                      edge: BoundaryEdge.end,
+                      height: handleHeight,
+                      onStart: onEdgeDragStart!,
+                      onUpdate: onEdgeDragUpdate,
+                      onEnd: onEdgeDragEnd,
+                      onCancel: onEdgeDragCancel,
+                    ),
+                ],
               ],
             ),
           ),
@@ -224,12 +259,56 @@ class EntryBlock extends StatelessWidget {
   }
 }
 
+/// A strip along the top or bottom edge that resizes the entry as soon as it is
+/// dragged, with no long press first.
+///
+/// It sits below the scroll view in the gesture arena, so a vertical drag that
+/// starts on the strip resizes and one that starts on the body still scrolls.
+/// Excluded from semantics: the increase/decrease actions on the block are the
+/// non-gesture route (SPEC §10.1), and a node here would be unlabelled.
+class _EdgeHandle extends StatelessWidget {
+  const _EdgeHandle({
+    required this.edge,
+    required this.height,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+    required this.onCancel,
+  });
+
+  final BoundaryEdge edge;
+  final double height;
+  final void Function(BoundaryEdge edge, Offset global) onStart;
+  final void Function(Offset global)? onUpdate;
+  final VoidCallback? onEnd;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    left: 0,
+    right: 0,
+    top: edge == BoundaryEdge.start ? 0 : null,
+    bottom: edge == BoundaryEdge.end ? 0 : null,
+    height: height,
+    child: MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        excludeFromSemantics: true,
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragStart: (d) => onStart(edge, d.globalPosition),
+        onVerticalDragUpdate: (d) => onUpdate?.call(d.globalPosition),
+        onVerticalDragEnd: (_) => onEnd?.call(),
+        onVerticalDragCancel: () => onCancel?.call(),
+      ),
+    ),
+  );
+}
+
 /// The grab points, shown once a block is selected or focused.
 ///
-/// Decoration only, and deliberately not interactive: the real targets are the
-/// whole top and bottom halves of the block, which is what keeps a resize
-/// reachable on a block only eighteen pixels tall. Adding a tappable node here
-/// would add an unlabelled one (SPEC §10.4).
+/// Decoration only, and deliberately not interactive: the strips in
+/// [_EdgeHandle] are the targets. Adding a tappable node here would add an
+/// unlabelled one (SPEC §10.4).
 class _Pucks extends StatelessWidget {
   const _Pucks({required this.color, required this.hasTop});
 
