@@ -8,6 +8,7 @@ import 'package:time_log/src/features/entry/entry_sheet.dart';
 import 'package:time_log/src/features/history/history_screen.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §8.5.
 void main() {
@@ -180,7 +181,7 @@ void main() {
     await pumpHistory(tester);
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
     await expectLater(tester, meetsGuideline(textContrastGuideline));
     handle.dispose();
   });

@@ -11,6 +11,7 @@ import 'package:time_log/src/features/export/export_sheet.dart';
 import 'package:time_log/src/features/settings/settings_screen.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// Records what it was asked to send instead of touching a platform channel.
 class _RecordingDelivery implements ExportDelivery {
@@ -322,7 +323,7 @@ void main() {
     await pumpSheetWithAnEntry(tester);
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
     handle.dispose();
   });
 

@@ -7,10 +7,7 @@ import 'package:time_log/src/core/color_contrast.dart';
 /// SPEC §9.8: the styling adapts, the identity does not.
 void main() {
   const styles = <TargetPlatform, PlatformIdiom>{
-    TargetPlatform.iOS: PlatformIdiom.apple,
     TargetPlatform.macOS: PlatformIdiom.apple,
-    TargetPlatform.android: PlatformIdiom.material,
-    TargetPlatform.fuchsia: PlatformIdiom.material,
     TargetPlatform.windows: PlatformIdiom.fluent,
     TargetPlatform.linux: PlatformIdiom.gnome,
   };
@@ -22,9 +19,7 @@ void main() {
   });
 
   test('the capsule platforms want a stadium, the cornered ones do not', () {
-    // Material's pill and Liquid Glass's capsule arrive at the same shape from
-    // different directions; Fluent and GNOME both want corners.
-    expect(PlatformStyle.material.buttonShape, isA<StadiumBorder>());
+    // Liquid Glass wants a capsule; Fluent and GNOME both want corners.
     expect(PlatformStyle.apple.buttonShape, isA<StadiumBorder>());
     for (final style in <PlatformStyle>[
       PlatformStyle.fluent,
@@ -37,7 +32,6 @@ void main() {
   test('only Apple is made of glass', () {
     expect(PlatformStyle.apple.glass, isTrue);
     for (final style in <PlatformStyle>[
-      PlatformStyle.material,
       PlatformStyle.fluent,
       PlatformStyle.gnome,
     ]) {
@@ -45,9 +39,12 @@ void main() {
     }
   });
 
-  test('desktops are denser than phones', () {
-    expect(PlatformStyle.material.compact, isFalse);
-    expect(PlatformStyle.apple.compact, isFalse, reason: 'this is the phone');
+  test('the desktop idioms are dense', () {
+    expect(
+      PlatformStyle.apple.compact,
+      isFalse,
+      reason: 'forCurrent tightens it',
+    );
     expect(PlatformStyle.forCurrent, returnsNormally);
     expect(PlatformStyle.fluent.compact, isTrue);
     expect(PlatformStyle.gnome.compact, isTrue);

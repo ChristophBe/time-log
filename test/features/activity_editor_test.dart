@@ -9,6 +9,7 @@ import 'package:time_log/src/features/entry/activity_editor.dart';
 import 'package:time_log/src/features/entry/entry_sheet.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §6.7: rename, recolour, merge — all undoable.
 void main() {
@@ -173,7 +174,7 @@ void main() {
     await pumpEditor(tester);
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
     handle.dispose();
   });
 }

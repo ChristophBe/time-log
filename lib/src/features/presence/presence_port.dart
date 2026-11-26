@@ -131,6 +131,6 @@ class MacOsPresencePort implements PresencePort {
 
 @Riverpod(keepAlive: true)
 PresencePort presencePort(Ref ref) =>
-    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
+    defaultTargetPlatform == TargetPlatform.macOS
     ? const MacOsPresencePort()
     : const UnsupportedPresencePort();

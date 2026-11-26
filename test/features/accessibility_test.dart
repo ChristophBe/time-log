@@ -9,6 +9,7 @@ import 'package:time_log/src/domain/timeline_writer.dart';
 import 'package:time_log/src/features/today/today_screen.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §10. These are acceptance criteria, not polish: a screen that fails them
 /// is not done.
@@ -71,7 +72,7 @@ void main() {
   });
 
   group('targets and contrast (SPEC §10.2, §10.3)', () {
-    testWidgets('every control meets the Android and iOS minimums', (
+    testWidgets('every control meets the desktop target minimum', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
@@ -92,8 +93,7 @@ void main() {
         activities: activities,
       ).pump(tester, const TodayScreen());
 
-      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-      await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
       handle.dispose();
     });
 

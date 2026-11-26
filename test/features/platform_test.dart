@@ -11,23 +11,20 @@ import 'package:time_log/src/features/settings/settings_screen.dart';
 import 'package:time_log/src/features/today/resume_action.dart';
 
 import '../support/pump_app.dart';
+import '../support/tap_targets.dart';
 
 /// SPEC §9.8: the same meaning, in each platform's own idiom.
 ///
-/// `flutter test` pins `defaultTargetPlatform` to Android, so the rest of the
-/// suite is the Material path by default and these are the only tests that go
-/// looking for the others.
-/// Both Apple targets, because iOS and macOS share an idiom and neither should
-/// be the one that was only assumed to work.
-final _apple = TargetPlatformVariant(<TargetPlatform>{
-  TargetPlatform.iOS,
-  TargetPlatform.macOS,
-});
+/// `flutter test` pins `defaultTargetPlatform` to Android, which this app does
+/// not target, so the rest of the suite runs the non-Apple path by default and
+/// these are the only tests that go looking for macOS.
+final _apple = TargetPlatformVariant.only(TargetPlatform.macOS);
 
-/// Where the time picker is a dial: macOS leaves the Apple idiom for this one
-/// control, because a wheel is a touch control.
+/// Where the time picker is a dial: every desktop, macOS included, because a
+/// wheel is a touch control.
 final _dial = TargetPlatformVariant(<TargetPlatform>{
-  TargetPlatform.android,
+  TargetPlatform.linux,
+  TargetPlatform.windows,
   TargetPlatform.macOS,
 });
 
@@ -67,21 +64,7 @@ void main() {
   }
 
   group('the time picker is the platform\'s own (SPEC §8.4)', () {
-    testWidgets('a wheel on iOS', (tester) async {
-      await pumpSheet(tester);
-      await tester.tap(find.widgetWithText(TextButton, '14:00'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(CupertinoDatePicker), findsOneWidget);
-      expect(find.text('Done'), findsOneWidget);
-      expect(
-        find.byType(TimePickerDialog),
-        findsNothing,
-        reason: 'a dial is the wrong control on iOS',
-      );
-    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
-
-    testWidgets('a dial on Material and macOS', (tester) async {
+    testWidgets('a dial on every desktop', (tester) async {
       await pumpSheet(tester);
       await tester.tap(find.widgetWithText(TextButton, '14:00'));
       await tester.pumpAndSettle();
@@ -121,7 +104,7 @@ void main() {
       expect(find.text('PM'), findsOneWidget);
     }, variant: _dial);
 
-    testWidgets('cancelling the wheel changes nothing', (tester) async {
+    testWidgets('cancelling the dial changes nothing', (tester) async {
       final h = await pumpSheet(tester);
       await tester.tap(find.widgetWithText(TextButton, '14:00'));
       await tester.pumpAndSettle();
@@ -136,7 +119,7 @@ void main() {
           endUtc: any(named: 'endUtc'),
         ),
       );
-    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+    }, variant: _dial);
   });
 
   group('settings controls', () {
@@ -157,7 +140,7 @@ void main() {
       expect(find.byType(Switch), findsOneWidget);
     }, variant: _apple);
 
-    testWidgets('Material gets Material ones', (tester) async {
+    testWidgets('everyone else gets Material ones', (tester) async {
       await WidgetHarness(now: now).pump(tester, const SettingsScreen());
 
       expect(find.byType(SegmentedButton<int>), findsWidgets);
@@ -214,13 +197,15 @@ void main() {
   });
 
   group('SPEC §10 holds on the Apple path too', () {
-    testWidgets('settings stays labelled and hittable on iOS', (tester) async {
+    testWidgets('settings stays labelled and hittable on macOS', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
 
       await WidgetHarness(now: now).pump(tester, const SettingsScreen());
 
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-      await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(desktopTapTargetGuideline));
       await expectLater(tester, meetsGuideline(textContrastGuideline));
       handle.dispose();
     }, variant: _apple);

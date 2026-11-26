@@ -33,10 +33,8 @@ ThemeData buildAppTheme(Brightness brightness, [PlatformStyle? platform]) {
       builders: <TargetPlatform, PageTransitionsBuilder>{
         // Flutter's defaults are already these; naming them is what keeps the
         // reasoning with the code. Cupertino's transition is also what gives
-        // iOS and macOS their edge-swipe back.
-        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        // macOS its edge-swipe back.
         TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
         TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
         TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
       },
@@ -219,8 +217,7 @@ ButtonStyle _buttonStyle(TextTheme text, PlatformStyle style) => ButtonStyle(
 /// The target platform a hand-picked [PlatformStyle] implies, so that a theme
 /// built for one idiom does not then get another's scroll physics.
 TargetPlatform _platformFor(PlatformStyle style) => switch (style.idiom) {
-  PlatformIdiom.apple => TargetPlatform.iOS,
-  PlatformIdiom.material => TargetPlatform.android,
+  PlatformIdiom.apple => TargetPlatform.macOS,
   PlatformIdiom.fluent => TargetPlatform.windows,
   PlatformIdiom.gnome => TargetPlatform.linux,
 };

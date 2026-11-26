@@ -4,7 +4,7 @@ A Flutter app for logging what you are doing during the day. One activity runs a
 a new one stops the current one. The day is shown as a calendar you can read at a glance, resume
 past work from, and correct afterwards.
 
-Status: v1 specification. No code yet. Target: Android, iOS, macOS, Windows, Linux, Web.
+Status: v1 specification. No code yet. Target: macOS, Windows, Linux. (Android, iOS and the web were dropped on 2026-11-26 to focus on the desktop; where a section below still reads as written for them, the desktop reading wins.)
 
 ---
 
@@ -40,7 +40,7 @@ cheap enough that you keep doing it:
 3. **Every gesture has a non-gesture equivalent.** Anything you can drag, you can also type and
    step with a keyboard or screen reader (§10).
 4. **Boring and conventional — on whichever platform you are.** Standard navigation, standard
-   sheets, standard undo, and the host's own manners: Material on Android, Liquid Glass on Apple,
+   sheets, standard undo, and the host's own manners: Liquid Glass on macOS,
    Fluent's density on Windows, GNOME's shapes on Linux. Novel interaction is a cost, not a feature,
    and so is making a user learn a design system their device does not use. What does *not* adapt is
    the identity — colour meaning, typeface, the mark, the day's own shapes (§9.8).
@@ -49,8 +49,8 @@ cheap enough that you keep doing it:
 
 ## 2. User and core loop
 
-One person, their own data, used many times a day in short bursts, often one-handed on a phone and
-often while already doing something else.
+One person, their own data, used many times a day in short bursts, often while already doing
+something else at a desktop.
 
 ```
 launch ──▶ see what is running ──▶ start the next thing ──▶ (day fills up)
@@ -518,7 +518,7 @@ sheet's overflow menu for the rest of the session.
 
 ## 8. Screens
 
-Navigation: `Today` / `History` / `Projects` / `Settings`. Bottom navigation bar on phones,
+Navigation: `Today` / `History` / `Projects` / `Settings`. Bottom navigation bar in a narrow window,
 navigation rail from the medium breakpoint (≥ 600 dp), extended rail on desktop (≥ 1240 dp).
 `go_router` with deep links `/` , `/day/:isoDate`, `/entry/:id`, `/history`, `/projects`,
 `/settings`.
@@ -576,8 +576,7 @@ tells you nothing, and the date is the real title of this screen.
   which puts every gridline below the instant it claims to mark while the blocks beside it are
   positioned exactly. Labels sit in the gutter, which the rules stop short of, and a vertical
   hairline closes the gutter so the blocks read as placed against the axis.
-- **Zoom** 40–240 px/hour, default 72 (a 24-hour day scrolls). Pinch on touch, `Ctrl`/`Cmd`+scroll
-  on desktop, and explicit zoom buttons for anyone who cannot pinch. The buttons float over the
+- **Zoom** 40–240 px/hour, default 72 (a 24-hour day scrolls). Pinch on a trackpad, `Ctrl`/`Cmd`+scroll, and explicit zoom buttons for anyone who cannot pinch. The buttons float over the
   top-right of the day rather than sitting in the header: zoom acts on what is underneath it, and
   the header is for the day, not for the view of it. They are always on screen — they are the
   non-gesture equivalent of pinching (§10.1), so they may not live behind a menu.
@@ -702,7 +701,7 @@ activity. Lazy-loads by month. Swipe a row to delete (with undo); long-press for
   invoice. Columns `id, activity, project, note, start_local, end_local, start_utc, end_utc,
   duration_minutes, tz`. Presets — this week, last week, this month, last month — plus a custom
   range, and a count and total shown before you commit. Shared via the platform share sheet / save
-  dialog; downloaded on web.
+  dialog.
 
   **Filter by project** (§6.12): once at least one project exists, a second row of chips offers
   **All** · each project · **No project**, one at a time. The count and total shown before you commit
@@ -803,7 +802,7 @@ the day that has just ended advances, a day you navigated to does not.
 
 | Thing | Budget |
 | --- | --- |
-| Cold start to interactive | < 1.5 s on a mid-range Android device |
+| Cold start to interactive | < 1.5 s on a mid-range laptop |
 | Start action, tap to committed | < 50 ms |
 | One day's entries query at 50 000 entries | < 5 ms |
 | Calendar scroll / zoom | no dropped frames at the device refresh rate |
@@ -813,10 +812,6 @@ the day that has just ended advances, a day you navigated to does not.
 
 - DB fails to open: full-screen explanation with **Retry** and **Export diagnostics**; never a
   silent empty timeline, which would read as data loss.
-- Web without persistent storage (private browsing, no OPFS): a dismissible banner — "Storage here
-  is temporary. Export to keep your data." — shown on first launch. The signal is drift's chosen
-  implementation being in-memory; anything that persists, even IndexedDB, is not warned about,
-  because it is not a lie.
 - Import of a file from a newer `schemaVersion`: refused with a clear message, never partially applied.
 
 ### 9.6 Suggestion ranking
@@ -920,7 +915,7 @@ source of all of them; `tool/brand/README.md` has the two commands.
 
 ### What adapts, and what does not
 
-The app is a guest on six platforms. Its *manners* are the host's; its *identity* is its own.
+The app is a guest on three platforms. Its *manners* are the host's; its *identity* is its own.
 
 | Invariant everywhere | Adapts per platform |
 | --- | --- |
@@ -947,9 +942,9 @@ Because the header floats, the day owns the full height and takes a top inset fr
 measured rather than written down: it moves with the text scale, with the running activity's name
 and with the safe area.
 
-**Time pickers.** iOS gets the wheel and everything else the Material dial, macOS included. A wheel
-is a touch control and is poor with a pointer, so here the desktop outranks the Apple idiom. The
-date pickers are not affected.
+**Time pickers.** Every platform gets the Material dial, macOS included. A wheel is a touch control
+and is poor with a pointer, so here the desktop outranks the Apple idiom. The date pickers are not
+affected.
 
 **Keyboard.** §10.5's "Cmd/Ctrl" is one shortcut with two names, not two shortcuts: the command key
 is Cmd on Apple and Ctrl elsewhere, never both. On macOS the same callbacks are also a real menu bar
@@ -1014,8 +1009,7 @@ so it leaves no trace.
 backup you export. The backup carries the sessions but **not** the setting, and import never changes
 it: consent and the login item belong to this computer, so restoring a file must not start recording.
 
-**Platforms.** macOS only for now. Windows and Linux could do this and are not built; phones and the
-web have no equivalent. Everywhere else the setting is shown disabled and says so (§14.12).
+**Platforms.** macOS only for now. Windows and Linux could do this and are not built. Everywhere else the setting is shown disabled and says so (§14.12).
 
 ---
 
@@ -1035,8 +1029,10 @@ feature that fails them is not done.
 
 ### 10.2 Targets, text and motion
 
-- All interactive targets ≥ 48 × 48 dp, including resize handles (which sit as pucks partly outside
-  short blocks to reach the size) and the stepper buttons.
+- All interactive targets ≥ 32 × 32 dp, including resize handles (which sit as pucks partly outside
+  short blocks to reach the size) and the stepper buttons. This is the desktop minimum: the pointer is
+  precise and the compact styles of §9.8 draw controls 32–40 dp high. The earlier 48 dp was a touch
+  figure and went with the mobile targets.
 - Layout survives text scale to 200 % and bold-text settings: no clipped labels, no overlapping
   rows; blocks drop labels rather than truncating mid-word, and the sheet scrolls.
 - `MediaQuery.disableAnimations` is honoured: no now-line pulse, no block-resize animation,
@@ -1093,7 +1089,7 @@ TalkBack, VoiceOver, keyboard-only desktop pass, and a 200 %-scale pass. Recorde
 | SDK | Flutter / Dart | 3.47 / 3.13 |
 | UI | Material 3, with a per-platform style layer and Cupertino controls where a design system genuinely differs (§9.8) | — |
 | State | `flutter_riverpod` + `riverpod_annotation` / `riverpod_generator` | ^3.4.3 / ^4.0.7 / ^4.0.9 |
-| Persistence | `drift` + `drift_flutter` (SQLite; `WasmDatabase` + OPFS on web) | ^2.35.1 / ^0.3.1 |
+| Persistence | `drift` + `drift_flutter` (SQLite) | ^2.35.1 / ^0.3.1 |
 | Routing | `go_router` | ^18.0.2 |
 | Formatting | `intl` | ^0.20.3 |
 | Zones | `timezone` + `flutter_timezone` | ^0.11.1 / ^5.1.0 |
@@ -1104,7 +1100,6 @@ TalkBack, VoiceOver, keyboard-only desktop pass, and a 200 %-scale pass. Recorde
 
 Notes: `drift_flutter` brings the native SQLite libraries and `path_provider` transitively — do
 **not** add `sqlite3_flutter_libs` directly, it is now EOL (`sqlite3` 3.x bundles the natives).
-Web requires the `sqlite3.wasm` and drift worker assets to be committed under `web/`.
 Platform-affordance packages (`flutter_local_notifications`, `share_plus`, `file_picker`) arrive with
 the phases that need them (§13), not in P0.
 
@@ -1237,10 +1232,10 @@ current and asserting §4 still holds.
 `noDateTimeNowOutsideClock` (§11.4) · `domainHasNoFlutterImports`.
 
 CI (`.github/workflows/ci.yml`) runs `flutter analyze`, `dart format --set-exit-if-changed`,
-`flutter test`, and the integration suite on one mobile and one desktop target. It also checks that
+`flutter test`, and the integration suite on macOS. It also checks that
 the committed `*.g.dart` files are current, by regenerating them and diffing — `analysis_options.yaml`
 excludes them from analysis, so nothing else would notice a stale one. Every push to `main` builds
-all six platforms (§14.12); a pull request builds web and Android.
+all three platforms (§14.12); a pull request builds Linux.
 
 **The suite needs a UTC+01:00 rendering zone.** Fixtures are UTC instants on 2026-03-10 and the UI
 renders local time (§5.3), so 19 tests fail under `TZ=UTC`. Dart takes the local zone from the
@@ -1253,16 +1248,16 @@ the README both use `Europe/Berlin`.
 
 | Phase | Scope | Done when |
 | --- | --- | --- |
-| **P0 Foundation** | `flutter create` for all six targets, deps, folder layout, Drift DB + schema (§5.2) + migration harness, `Clock`, Riverpod wiring, M3 theme + palette, router skeleton, CI. | App launches on phone, desktop and web against an empty DB; invariant tests exist and pass against the writer's stubs. CI was the one item that did not land here; it arrived in P4.2. |
+| **P0 Foundation** | `flutter create` for the desktop targets, deps, folder layout, Drift DB + schema (§5.2) + migration harness, `Clock`, Riverpod wiring, M3 theme + palette, router skeleton, CI. | App launches on the desktop against an empty DB; invariant tests exist and pass against the writer's stubs. CI was the one item that did not land here; it arrived in P4.2. |
 | **P1 Core tracking** | `TimelineWriter` start/stop/resume/continue, running card, Start sheet with suggestions, persistence across relaunch. | Start → switch → resume works end-to-end; §4 and §6 tests green; running entry survives app kill. |
 | **P2 Day calendar** | Day view, axis, zoom, now-line, blocks, gaps, midnight splitting, day navigation, day totals. | Calendar geometry and day/zone tests green; a day of real use reads correctly, including across a DST change. |
 | **P3 Editing** | Drag handles, the §7 rules, entry sheet with typed fields and steppers, split, delete, change an entry's activity (§6.10), undo — each landing with its keyboard and screen-reader equivalent. | §7 tests green; a boundary can be corrected by drag, by typing, and by keyboard alone with identical results. |
 | **P4 Daily usability** | History + search, export/import, settings, long-run banner, short-entry clustering, tap-a-gap-to-fill-it, empty/error states. | **Built.** Export → wipe → import round-trips, asserted in `backup_round_trip_test.dart`. §10.6's manual passes (TalkBack, VoiceOver, keyboard-only, 200 %) are still outstanding. The `integration_test` run needed a device, which P4.2 supplies. |
 | **P4.1 Day rollover** | Stop and restart the running entry at midnight (§6.11), the catch-up pass at launch / resume / tick (§9.3) — the app's first lifecycle hook — the day view following midnight (§8.2), and the long-run threshold measured over the whole run (§8.1). | Rollover tests green; a clock left running overnight comes back as one entry per day with the 8 h banner still able to fire. |
-| **P4.2 CI** | GitHub Actions: §12's gates on every pull request, all six platform builds and the integration suite on every push to `main` (§14.12), and a `v*` tag cutting a release — the macOS artefact through `tool/release_macos.sh` so there is one definition of a release build. | Workflows green on `main`, including the first execution of the integration suite. |
+| **P4.2 CI** | GitHub Actions: §12's gates on every pull request, all three platform builds and the integration suite on every push to `main` (§14.12), and a `v*` tag cutting a release — the macOS artefact through `tool/release_macos.sh` so there is one definition of a release build. | Workflows green on `main`, including the first execution of the integration suite. |
 | **P4a Active time** | §9.9 on macOS: session table and rules, native monitor, login item, staying alive behind a menu bar item, rail, active total, setting, backup. | Automated tests green. The native half cannot be tested on the VM, so it needs one manual pass on a signed build: lock, sleep, lid, user switch, reboot, `kill -9`, an hour hidden. |
 | **P4b Projects** | Projects on entries (§6.12): table and schema v4, writer actions, backup format 3, the Projects destination (§8.7), the project chip in the composer, the running band and the entry sheet with the latest project as default (§8.1, §8.3, §8.4), and the export's project filter and column (§8.6). | Project and export tests green; a month exported for one project sums to that project's entries and nothing else, even when an activity was also logged under another. |
-| **P5 Platform affordances** | Android persistent notification with Stop/Resume actions, iOS Live Activity (best-effort), desktop global shortcuts + menubar/tray quick-start, web install/PWA polish. | Start and stop are reachable without opening the app on each platform that supports it. |
+| **P5 Platform affordances** | Desktop global shortcuts + menubar/tray quick-start. | Start and stop are reachable without opening the app on each platform that supports it. |
 | **P6 Later** | Week view, per-activity reports, render-in-recorded-zone, tags, optional sync. | Out of v1 scope; listed so the v1 model does not preclude them. |
 
 Each phase ends with: `flutter analyze` clean, tests green, a11y criteria in §10 met for the new
@@ -1290,8 +1285,8 @@ surface, and the spec updated if the phase taught us something.
 9. All of §10 holds: TalkBack, VoiceOver and keyboard-only passes done; 200 % text scale clean;
    contrast verified; no gesture-only functionality.
 10. Full data export and re-import round-trips to an identical timeline.
-11. Performance budgets in §9.4 met on a mid-range Android device with 50 000 seeded entries.
-12. The app runs on Android, iOS, macOS, Windows, Linux and Web from one codebase, with no feature
+11. Performance budgets in §9.4 met on a mid-range laptop with 50 000 seeded entries.
+12. The app runs on macOS, Windows and Linux from one codebase, with no feature
     silently missing on a platform (anything platform-gated is stated in the UI).
 13. A clock left running across one or more midnights comes back as one entry per day plus a running
     one for today, with no time gained or lost, and the long-run banner still measuring the whole
@@ -1348,11 +1343,7 @@ The original request, mapped to where it is specified:
    leaves both. If that turns out to be the common case rather than the exception, the smallest fix
    is a second SnackBar action offering to merge them, which needs a rule for which note survives.
    Revisit after real use.
-7. **Android release signing** — `android/app/build.gradle.kts` still signs release builds with the
-   debug key, so the APK a tag produces is sideloadable and nothing more. That is deliberate for now:
-   an upload keystore is a secret that cannot be rotated — lose it and a published app can never be
-   updated again — and there is nothing published yet to need one. Revisit when there is a reason to
-   put the app on Play.
+7. **Android release signing** — gone with the Android target (2026-11-26). Revisit if mobile returns.
 8. **Finished entries that cross midnight** — §6.11 cuts only the running entry, so a span typed,
    dragged, gap-filled or imported across the date line is still one row (§5.3). That keeps the app
    from overruling a span someone entered deliberately, at the cost of two kinds of midnight-crossing
