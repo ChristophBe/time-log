@@ -79,16 +79,20 @@ main() {
   cd "$REPO_ROOT"
   preflight
 
-  local version
-  version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)"
+  # CI passes VERSION (and BUILD_NUMBER) from the release tag; by hand it comes from pubspec.
+  local version="${VERSION:-}" build_args=()
+  [[ -n "$version" ]] || version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)"
   [[ -n "$version" ]] || fail 'could not read version from pubspec.yaml'
+  if [[ -n "${VERSION:-}" ]]; then
+    build_args=(--build-name="$version" --build-number="${BUILD_NUMBER:-1}")
+  fi
 
   step "Building $APP_NAME $version (release)"
   rm -rf "$OUT_DIR"
   mkdir -p "$OUT_DIR"
   # Signing happens during the build: the Release configuration carries the Developer ID
   # identity and the hardened runtime, and Xcode signs the embedded frameworks with it.
-  flutter build macos --release
+  flutter build macos --release ${build_args[@]+"${build_args[@]}"}
   [[ -d "$BUILT_APP" ]] || fail "expected an app bundle at $BUILT_APP"
 
   step 'Verifying the signature'

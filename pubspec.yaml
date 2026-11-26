@@ -1,6 +1,8 @@
 name: time_log
 description: "A new Flutter project."
 publish_to: 'none'
+# Placeholder: releases are tagged from commit messages (see README) and CI injects
+# the real version with --build-name/--build-number.
 version: 0.1.0+1
 
 environment:
