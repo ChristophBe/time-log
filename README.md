@@ -81,7 +81,7 @@ without a Gatekeeper warning. This is direct distribution, not the App Store.
 SKIP_NOTARIZE=1 ./tool/release_macos.sh   # build and sign only, no round trip to Apple
 ```
 
-Pushing a `v<version>` tag runs this same script on a CI runner and attaches the result to a draft
+Pushing a `v<version>` tag runs this same script on a CI runner and attaches the result to a
 GitHub Release, along with the other platforms' artefacts — see [CI](#ci). Running it locally stays
 supported and is the faster way to debug a signing problem.
 
@@ -179,7 +179,7 @@ generated file would otherwise pass everything. The macOS build job signs with t
 when the secrets are present, which also runs the release script's notarisation preflight on every
 push instead of saving the surprise for a release; without the secrets it builds Debug and says so.
 
-`.github/workflows/release.yml` turns a `v*` tag into a draft GitHub Release: a notarised `.dmg`
+`.github/workflows/release.yml` turns a `v*` tag into a published GitHub Release: a notarised `.dmg`
 from `tool/release_macos.sh`, an APK, a Windows zip, a Linux tarball and the web bundle. It refuses
 to run if the tag and `pubspec.yaml` disagree about the version. Nothing above the release row needs a secret; the
 notarised `.dmg` needs five, and `tool/ci/` holds the two scripts that put them where the release
