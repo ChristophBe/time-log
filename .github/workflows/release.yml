@@ -166,13 +166,22 @@ jobs:
           path: build/release/notary-*.json
           if-no-files-found: ignore
 
+  # A macOS failure (an expired Apple agreement, a notarisation rejection) must
+  # not hold back the platforms that built fine, so this runs whenever at least
+  # one artefact exists. A release without a .dmg says so in its notes.
   publish:
     needs: [guard, linux, windows, macos]
+    if: >-
+      ${{ !cancelled() && needs.guard.result == 'success'
+      && (needs.linux.result == 'success' || needs.windows.result == 'success'
+      || needs.macos.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
+      # Named, so the macos-notary-logs artefact of a failed run stays out of the release.
       - uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: '{linux,windows,macos}'
           merge-multiple: true
       - run: ls -lh dist
       - uses: softprops/action-gh-release@v3
@@ -186,7 +195,7 @@ jobs:
 
             | Platform | File | Notes |
             | --- | --- | --- |
-            | macOS | `.dmg` | Developer ID, notarised and stapled — opens with no Gatekeeper warning |
+            | macOS | `.dmg` | Developer ID, notarised and stapled — opens with no Gatekeeper warning. Missing if the macOS build failed |
             | Windows | `.zip` | Unsigned; SmartScreen will warn |
             | Linux | `.tar.gz` | Portable bundle |
 
