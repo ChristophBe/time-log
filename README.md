@@ -9,6 +9,9 @@ yet, and every non-obvious decision is written down there with its reasoning. Re
 changing behaviour — in particular §4 (the timeline invariants), §7 (boundary editing) and §10
 (accessibility), which are the parts that are expensive to get wrong.
 
+**Project site:** <https://christophbe.github.io/time-log/> — source in [`docs/`](docs/), deployed by
+`.github/workflows/pages.yml` (one-time: Settings → Pages → Source → *GitHub Actions*).
+
 ## Status
 
 Phases **P0–P4** of `SPEC.md` §13 are built: tracking, the day calendar, editing, and daily
