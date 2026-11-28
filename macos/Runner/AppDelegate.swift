@@ -29,7 +29,8 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
+    // No super call: FlutterAppDelegate does not implement this, so forwarding
+    // raises "unrecognized selector" and the window never gets drawn.
     PresenceMonitor.shared.onTrackingChanged = { [weak self] tracking in
       self?.setStatusItemVisible(tracking)
     }
