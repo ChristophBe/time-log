@@ -10,6 +10,9 @@ import 'latest_undo.dart';
 /// Length of the undo window (SPEC §7.5).
 const Duration kUndoWindow = Duration(seconds: 8);
 
+const double _kCompactToastBreakpoint = 600;
+const double _kToastMaxWidth = 420;
+
 /// Announces [message] to assistive technology and shows it with an Undo
 /// action.
 ///
@@ -37,9 +40,13 @@ void showUndoableFeedback(
     ),
   );
   final messenger = ScaffoldMessenger.of(context);
+  // A fixed width centres a floating SnackBar; it is only set where the
+  // full-width bar would stretch across a wide window.
+  final screenWidth = MediaQuery.sizeOf(context).width;
   messenger.clearSnackBars();
   messenger.showSnackBar(
     SnackBar(
+      width: screenWidth > _kCompactToastBreakpoint ? _kToastMaxWidth : null,
       content: Text(message),
       duration: kUndoWindow,
       // Explicit, because `SnackBar.persist` defaults to `action != null`:

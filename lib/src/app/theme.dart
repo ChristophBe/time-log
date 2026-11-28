@@ -150,8 +150,18 @@ ThemeData buildAppTheme(Brightness brightness, [PlatformStyle? platform]) {
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: style.controlBorderRadius),
-      insetPadding: const EdgeInsets.all(Insets.md),
+      // Explicit surface rather than Material's inverse one, so the toast
+      // follows the palette in both modes and is edged against the page.
+      backgroundColor: scheme.surfaceContainerHighest,
+      contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onSurface),
+      actionTextColor: scheme.onSurface,
+      closeIconColor: scheme.onSurfaceVariant,
+      showCloseIcon: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: style.controlBorderRadius,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      insetPadding: const EdgeInsets.all(Insets.sm),
     ),
   );
 }
