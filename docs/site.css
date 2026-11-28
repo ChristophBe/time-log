@@ -64,15 +64,20 @@ p { margin: 0; }
 .lede { font-size: 20px; color: var(--muted); max-width: 34em; }
 .eyebrow { font: 500 13px/1 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 
-/* ---- header ---- */
-header.top { border-bottom: 1px solid var(--hair); }
-header.top .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+/* ---- header: always carries the navigation and the download button ---- */
+header.top { position: sticky; top: 0; z-index: 30; background: var(--bg); border-bottom: 1px solid var(--hair); }
+header.top .wrap { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px; min-height: 64px; padding-top: 8px; padding-bottom: 8px; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 600; text-decoration: none; letter-spacing: -0.2px; }
 .brand img { width: 28px; height: 28px; border-radius: 8px; }
 header.top nav { margin-left: auto; display: flex; gap: 24px; font-size: 15px; }
-header.top nav a { text-decoration: none; color: var(--muted); }
+header.top nav a { text-decoration: none; color: var(--muted); white-space: nowrap; }
 header.top nav a:hover { color: var(--ink); }
-@media (max-width: 600px) { header.top nav a:not(:last-child) { display: none; } }
+header.top .dl { min-height: 36px; padding: 0 16px; font-size: 14px; }
+@media (max-width: 640px) {
+  header.top .dl { margin-left: auto; }
+  header.top nav { order: 3; width: 100%; margin-left: 0; justify-content: space-between; gap: 12px; font-size: 14px; }
+}
+html { scroll-padding-top: 72px; }
 
 /* ---- buttons: pills, ink ---- */
 .btn {
@@ -223,14 +228,6 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; justify-content: 
 .m-btn.idle { background: var(--container); color: var(--muted); }
 .m-btn.press { opacity: .7; }
 
-.m-toast {
-  position: absolute; left: 12px; right: 12px; bottom: 76px; z-index: 9; background: var(--ink); color: var(--on-ink);
-  border-radius: 12px; padding: 0 8px 0 16px; height: 44px; display: flex; align-items: center; justify-content: space-between;
-  opacity: 0; transform: translateY(8px); pointer-events: none;
-}
-.m-toast.on { opacity: 1; transform: none; transition-duration: .12s; }
-.m-toast b { font-weight: 600; text-decoration: underline; padding: 8px; border-radius: 8px; }
-.m-toast b.press { background: rgba(128,128,128,.4); }
 
 .m-sheet {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--bg);
@@ -283,24 +280,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 32px; justify-content: 
 .cta-band .lede { max-width: 28em; }
 .cta-band .cta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
 .cta-band .platforms { justify-content: center; margin: 16px 0 0; }
-.sticky-cta {
-  position: fixed; left: 0; right: 0; top: 0; z-index: 30; height: 56px; padding: 0 16px;
-  display: none; align-items: center; justify-content: space-between;
-  background: var(--bg); border-bottom: 1px solid var(--hair); font-weight: 600;
-  transform: translateY(-100%); transition: transform .12s ease-out;
-}
-.sticky-cta .btn { min-height: 36px; padding: 0 16px; font-size: 14px; }
-.js .sticky-cta { display: flex; }
-.sticky-cta.on { transform: none; }
-@media (min-width: 700px) { .sticky-cta { padding: 0 max(24px, calc((100vw - 1032px) / 2)); } }
+.js .m-hsep { border-bottom: 1px solid var(--hair); }
+.chip { text-decoration: none; }
+a.chip:hover { color: var(--ink); background: var(--container); }
 
-/* ---- reveal and hover ---- */
-.js .reveal { opacity: 0; transform: translateY(8px); transition: opacity .12s ease-out, transform .12s ease-out; }
-.js .reveal.in { opacity: 1; transform: none; }
-.grid > div { transition: background-color .09s; }
-.grid > div:hover { background: var(--container); }
-@media (prefers-reduced-motion: reduce) {
-  .js .reveal { opacity: 1; transform: none; transition: none; }
-  .sticky-cta { transition: none; }
-}
-.m-hsep { border-bottom: 1px solid var(--hair); }
+/* ---- how it works ---- */
+.demo h3.big { font-size: clamp(28px, 4vw, 38px); letter-spacing: -0.9px; line-height: 1.12; }
+.demo h2 { font-size: clamp(26px, 3.4vw, 34px); }
+.ico { color: var(--ink); margin-bottom: 4px; }

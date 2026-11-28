@@ -15,16 +15,14 @@
     <div class="wrap">
       <a class="brand" href="#top"><img src="mark.svg" alt="" width="28" height="28">time-log</a>
       <nav aria-label="Primary">
+        <a href="#how">How it works</a>
         <a href="#features">Features</a>
         <a href="#get">Get it</a>
         <a href="https://github.com/ChristophBe/time-log">GitHub</a>
       </nav>
+      <a class="btn dl" data-dl data-plain href="https://github.com/ChristophBe/time-log/releases/latest">Download</a>
     </div>
   </header>
-
-  <div class="sticky-cta" aria-hidden="true" id="sticky">
-    <span>time-log</span><a class="btn" data-dl href="https://github.com/ChristophBe/time-log/releases/latest" tabindex="-1">Download</a>
-  </div>
 
   <main id="top">
     <div class="hero">
@@ -37,7 +35,7 @@
             <a class="btn" data-dl href="https://github.com/ChristophBe/time-log/releases/latest">Download</a>
             <a class="btn ghost" href="#how">See it in action</a>
           </div>
-          <small>macOS, Windows, Linux, Android and web.</small>
+          <small>macOS, Windows and Linux.</small>
         </div>
         <div class="stage">
           <div class="mock" data-demo="start" role="img" aria-label="Animation: typing 'Rev' in the composer, picking Review PRs, and the running entry stopping where the new one starts."></div>
@@ -47,11 +45,27 @@
 
     <section id="how">
       <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">How it works</span>
+          <h2>Start it. See it. Fix it.</h2>
+          <p class="lede">time-log is a simple loop. You start what you’re doing, your day fills in as a calendar, and you correct anything afterwards.</p>
+        </div>
         <article class="demo">
           <div class="text">
-            <span class="eyebrow">Look</span>
-            <h2>See the whole day at a glance</h2>
-            <p>Your day is a calendar you can read in a second. Forgotten stretches show up as gaps, so nothing goes missing.</p>
+            <span class="eyebrow">Step 1</span>
+            <h3 class="big">Start</h3>
+            <p>Type what you’re doing, or tap a recent activity. Whatever was running stops.</p>
+          </div>
+          <div class="stage">
+            <div class="mock" data-demo="pick" role="img" aria-label="Animation: tapping the field, picking Email from the recent activities, and Email becoming the running activity."></div>
+            <button class="ctl" type="button">Pause</button>
+          </div>
+        </article>
+        <article class="demo">
+          <div class="text">
+            <span class="eyebrow">Step 2</span>
+            <h3 class="big">See</h3>
+            <p>Your day builds itself as a calendar. Time you forgot to track shows up as a gap.</p>
           </div>
           <div class="stage">
             <div class="mock" data-demo="gap" role="img" aria-label="Animation: tapping a gap in the day and filling it with an entry."></div>
@@ -61,9 +75,9 @@
 
         <article class="demo">
           <div class="text">
-            <span class="eyebrow">Fix</span>
-            <h2>Fixed in seconds, never lost</h2>
-            <p>Wrong start time? Drag it into place. Whatever you change, Undo is one tap away.</p>
+            <span class="eyebrow">Step 3</span>
+            <h3 class="big">Fix</h3>
+            <p>Wrong start time? Drag it into place. Undo any change.</p>
           </div>
           <div class="stage">
             <div class="mock" data-demo="boundary" role="img" aria-label="Animation: dragging the edge between two entries; the app asks before moving the neighbour."></div>
@@ -75,13 +89,19 @@
 
     <section id="features">
       <div class="wrap">
-        <div class="grid">
-          <div><h3>Nothing is ever lost</h3><p>Undo covers everything, so you can try freely.</p></div>
-          <div><h3>Look back any time</h3><p>Every day is kept, and searchable.</p></div>
-          <div><h3>Take it with you</h3><p>Back up, or export to JSON or CSV.</p></div>
-          <div><h3>Private by default</h3><p>Works offline. Your data stays on your device.</p></div>
-          <div><h3>Feels native everywhere</h3><p>On macOS, Windows, Linux, Android and the web.</p></div>
-          <div><h3>Quiet by design</h3><p>Keyboard-friendly and accessible. Colour only ever means something.</p></div>
+        <div class="section-head">
+          <span class="eyebrow">Features</span>
+          <h2>Everything around the tracking</h2>
+          <p class="lede">The basics are fast. These are the things that make it dependable day after day.</p>
+        </div>
+
+<div class="grid">
+          <div><svg class="ico" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg><h3>Undo any change</h3><p>One tap puts it back.</p></div>
+          <div><svg class="ico" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 20h14"/></svg><h3>Back up and export</h3><p>Backup file or spreadsheet.</p></div>
+          <div><svg class="ico" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><h3>Private and offline</h3><p>Stays on your device.</p></div>
+          <div><svg class="ico" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><h3>Feels at home</h3><p>Native look on each system.</p></div>
+          <div><svg class="ico" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11h.01M11 11h.01M15 11h.01M8 14h8"/></svg><h3>Works from the keyboard</h3><p>No mouse needed.</p></div>
+          <div><svg class="ico" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg><h3>Calm to look at</h3><p>Colour only when it means something.</p></div>
         </div>
       </div>
     </section>
@@ -95,7 +115,7 @@
           <a class="btn ghost" href="https://github.com/ChristophBe/time-log#running-it">Build from source</a>
         </div>
         <div class="platforms" aria-label="Platforms">
-          <span class="chip">macOS</span><span class="chip">Windows</span><span class="chip">Linux</span><span class="chip">Android</span><span class="chip">Web</span>
+          <a class="chip" data-asset="macOS" href="https://github.com/ChristophBe/time-log/releases/latest">macOS · .dmg</a><a class="chip" data-asset="Windows" href="https://github.com/ChristophBe/time-log/releases/latest">Windows · .zip</a><a class="chip" data-asset="Linux" href="https://github.com/ChristophBe/time-log/releases/latest">Linux · .tar.gz</a>
         </div>
       </div>
     </section>

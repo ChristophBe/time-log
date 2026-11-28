@@ -63,6 +63,35 @@
   const stopwatch = (s) => `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
   const hm = (h, m = 0) => h * 60 + m;
 
+  /* ---------- the pointer ---------- */
+
+  function pointer(root, q) {
+    return {
+      async cursorTo(target, fx = 0.5, fy = 0.5, ms = 600) {
+        const c = q('.m-cursor');
+        const r = root.getBoundingClientRect();
+        const t = typeof target === 'string' ? q(target) : target;
+        const tr = t.getBoundingClientRect();
+        const x = tr.left - r.left + tr.width * fx, yy = tr.top - r.top + tr.height * fy;
+        if (!c._placed) {
+          c.style.transition = 'none';
+          c.style.transform = `translate(${r.width * 0.78}px, ${r.height * 0.7}px)`;
+          c.offsetWidth; // flush
+          c.style.transition = '';
+          c._placed = true;
+        }
+        c.style.opacity = 1;
+        c.style.transitionDuration = ms + 'ms, .2s';
+        c.style.transform = `translate(${x}px, ${yy}px)`;
+      },
+      async click(el) {
+        const c = q('.m-cursor');
+        c.classList.remove('down'); c.offsetWidth; c.classList.add('down');
+        if (el) { el.classList.add('press'); setTimeout(() => el.classList.remove('press'), 220); }
+      },
+    };
+  }
+
   /* ---------- the mock screen ---------- */
 
   const CURSOR = '<svg width="22" height="22" viewBox="0 0 22 22"><path d="M4 2l13 8-6 1.6L8 18z" fill="#fff" stroke="#17171a" stroke-width="1.4" stroke-linejoin="round"/></svg>';
@@ -88,7 +117,6 @@
       </div></div>
       <div class="m-comp"><div class="m-field"><span class="ph">What now?</span><span class="txt"></span><span class="caret"></span></div><div class="m-btn idle">Start</div></div>
       <div class="m-scrim"></div><div class="m-panel"></div>
-      <div class="m-toast"><span></span><b>Undo</b></div>
       <div class="m-sheet"></div>
       <div class="m-dialog"></div>
       <div class="m-cursor">${CURSOR}</div>`;
@@ -178,12 +206,6 @@
         timers.push(m._tick);
       },
 
-      toast(text, show = true) {
-        const t = q('.m-toast');
-        t.firstElementChild.textContent = text;
-        t.classList.toggle('on', show);
-      },
-
       sheet(html, show = true) {
         const s = q('.m-sheet');
         if (html !== undefined) s.innerHTML = html;
@@ -217,29 +239,7 @@
       },
       closePanel() { m.panelOpen = false; q('.m-panel').classList.remove('on'); },
 
-      /* the pointer */
-      async cursorTo(target, fx = 0.5, fy = 0.5, ms = 600) {
-        const c = q('.m-cursor');
-        const r = root.getBoundingClientRect();
-        const t = typeof target === 'string' ? q(target) : target;
-        const tr = t.getBoundingClientRect();
-        const x = tr.left - r.left + tr.width * fx, yy = tr.top - r.top + tr.height * fy;
-        if (!c._placed) {
-          c.style.transition = 'none';
-          c.style.transform = `translate(${r.width * 0.78}px, ${r.height * 0.7}px)`;
-          c.offsetWidth; // flush
-          c.style.transition = '';
-          c._placed = true;
-        }
-        c.style.opacity = 1;
-        c.style.transitionDuration = ms + 'ms, .2s';
-        c.style.transform = `translate(${x}px, ${yy}px)`;
-      },
-      async click(el) {
-        const c = q('.m-cursor');
-        c.classList.remove('down'); c.offsetWidth; c.classList.add('down');
-        if (el) { el.classList.add('press'); setTimeout(() => el.classList.remove('press'), 220); }
-      },
+      ...pointer(root, q),
     };
     return m;
   }
@@ -310,7 +310,6 @@
         m.block('b', { running: false, end: now });
         m.block('c', { slot: 1, name: 'Review PRs', start: now, running: true });
         m.band({ slot: 1, name: 'Review PRs', sec: 0 });
-        m.toast('Started Review PRs');
         await sleep(300);
         m.q('.blk.run').classList.remove('fresh'); m.q('.blk.run').offsetWidth; m.q('.blk.run').classList.add('fresh');
         await sleep(2500);
@@ -354,7 +353,30 @@
         m.removeGap('d');
         m.block('b', { start: hm(12, 15) });
         m.block('a', { sel: false });
-        m.toast('Moved Email to 12:15');
+        await sleep(2800);
+      },
+    },
+
+    // The one-tap path: open the composer, tap a recent activity, no typing.
+    pick: {
+      cfg: { from: hm(11), to: hm(15), pph: 68, band: true },
+      async script(m, sleep) {
+        const now = hm(14, 32);
+        m.setNow(now);
+        m.block('a', { slot: 5, name: 'Standup', start: hm(11), end: hm(11, 30) });
+        m.block('b', { slot: 0, name: 'Writing specs', start: hm(11, 30), end: now, running: true });
+        m.band({ slot: 0, name: 'Writing specs', sec: (now - hm(11, 30)) * 60 });
+        await sleep(1100);
+        await m.cursorTo('.m-field', 0.4); await sleep(700);
+        await m.click(); m.focus(true);
+        m.setRows([['Email', 4, '3 h ago'], ['Review PRs', 1, '2 h ago'], ['Standup', 5, '3 h ago']], 'Stops <b>Writing specs</b> at 14:32.');
+        await sleep(1400);
+        await m.cursorTo('.m-panel .m-row', 0.5, 0.5, 500); await sleep(600);
+        await m.click(); await sleep(150);
+        m.closePanel(); m.focus(false);
+        m.block('b', { running: false, end: now });
+        m.block('c', { slot: 4, name: 'Email', start: now, running: true });
+        m.band({ slot: 4, name: 'Email', sec: 0 });
         await sleep(2800);
       },
     },
@@ -385,7 +407,6 @@
         await sleep(2800);
       },
     },
-
   };
 
   /* ---------- wire up ---------- */
@@ -424,23 +445,29 @@
 
   const ua = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
   const agent = navigator.userAgent;
-  const os = /android/i.test(agent) ? 'Android'
-    : /iphone|ipad|ios/i.test(agent) ? null
+  const os = /android|iphone|ipad|ios/i.test(agent) ? null
     : /mac/i.test(ua + agent) ? 'macOS'
     : /win/i.test(ua + agent) ? 'Windows'
     : /linux|x11/i.test(ua + agent) ? 'Linux' : null;
-  if (os) document.querySelectorAll('[data-dl]').forEach((a) => { a.textContent = `Download for ${os}`; });
+  if (os) document.querySelectorAll('[data-dl]:not([data-plain])').forEach((a) => { a.textContent = `Download for ${os}`; });
 
-  const hero = document.querySelector('.hero');
-  const sticky = document.getElementById('sticky');
-  if (hero && sticky) {
-    new IntersectionObserver(([e]) => {
-      const on = !e.isIntersecting && e.boundingClientRect.top < 0;
-      sticky.classList.toggle('on', on);
-      sticky.setAttribute('aria-hidden', String(!on));
-      sticky.querySelector('a').tabIndex = on ? 0 : -1;
-    }).observe(hero);
-  }
+  // Point the buttons straight at the newest release's files. Asset names carry the version, so
+  // they are looked up rather than written down; if the lookup fails the links keep pointing at
+  // the releases page.
+  const ASSETS = { macOS: /\.dmg$/i, Windows: /windows.*\.zip$/i, Linux: /linux.*\.tar\.gz$/i };
+  fetch('https://api.github.com/repos/ChristophBe/time-log/releases/latest')
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((rel) => {
+      const find = (name) => (rel.assets || []).find((a) => ASSETS[name].test(a.name));
+      document.querySelectorAll('[data-asset]').forEach((a) => {
+        const f = find(a.dataset.asset);
+        if (f) a.href = f.browser_download_url;
+      });
+      const mine = os && find(os);
+      if (mine) document.querySelectorAll('[data-dl]').forEach((a) => { a.href = mine.browser_download_url; });
+      document.querySelectorAll('[data-version]').forEach((el) => { el.textContent = rel.tag_name; });
+    })
+    .catch(() => {});
 
   const reveal = new IntersectionObserver((entries) => {
     entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); reveal.unobserve(e.target); } });
