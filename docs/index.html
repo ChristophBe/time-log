@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>time-log — one activity at a time</title>
+  <meta name="description" content="time-log is a time tracker where one activity runs at a time and the day is a calendar you can read at a glance, resume from, and correct afterwards.">
+  <meta name="theme-color" content="#17171a">
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/Geist-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#top"><img src="mark.svg" alt="" width="28" height="28">time-log</a>
+      <nav aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#get">Get it</a>
+        <a href="https://github.com/ChristophBe/time-log">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="sticky-cta" aria-hidden="true" id="sticky">
+    <span>time-log</span><a class="btn" data-dl href="https://github.com/ChristophBe/time-log/releases/latest" tabindex="-1">Download</a>
+  </div>
+
+  <main id="top">
+    <div class="hero">
+      <div class="wrap">
+        <div class="copy">
+          <span class="eyebrow">Time tracking for people who forget to</span>
+          <h1>Know where your day went.</h1>
+          <p class="lede">One activity at a time. Type what you’re doing, hit Start, and your day builds itself as a calendar.</p>
+          <div class="cta">
+            <a class="btn" data-dl href="https://github.com/ChristophBe/time-log/releases/latest">Download</a>
+            <a class="btn ghost" href="#how">See it in action</a>
+          </div>
+          <small>macOS, Windows, Linux, Android and web.</small>
+        </div>
+        <div class="stage">
+          <div class="mock" data-demo="start" role="img" aria-label="Animation: typing 'Rev' in the composer, picking Review PRs, and the running entry stopping where the new one starts."></div>
+        </div>
+      </div>
+    </div>
+
+    <section id="how">
+      <div class="wrap">
+        <article class="demo">
+          <div class="text">
+            <span class="eyebrow">Look</span>
+            <h2>See the whole day at a glance</h2>
+            <p>Your day is a calendar you can read in a second. Forgotten stretches show up as gaps, so nothing goes missing.</p>
+          </div>
+          <div class="stage">
+            <div class="mock" data-demo="gap" role="img" aria-label="Animation: tapping a gap in the day and filling it with an entry."></div>
+            <button class="ctl" type="button">Pause</button>
+          </div>
+        </article>
+
+        <article class="demo">
+          <div class="text">
+            <span class="eyebrow">Fix</span>
+            <h2>Fixed in seconds, never lost</h2>
+            <p>Wrong start time? Drag it into place. Whatever you change, Undo is one tap away.</p>
+          </div>
+          <div class="stage">
+            <div class="mock" data-demo="boundary" role="img" aria-label="Animation: dragging the edge between two entries; the app asks before moving the neighbour."></div>
+            <button class="ctl" type="button">Pause</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <div class="grid">
+          <div><h3>Nothing is ever lost</h3><p>Undo covers everything, so you can try freely.</p></div>
+          <div><h3>Look back any time</h3><p>Every day is kept, and searchable.</p></div>
+          <div><h3>Take it with you</h3><p>Back up, or export to JSON or CSV.</p></div>
+          <div><h3>Private by default</h3><p>Works offline. Your data stays on your device.</p></div>
+          <div><h3>Feels native everywhere</h3><p>On macOS, Windows, Linux, Android and the web.</p></div>
+          <div><h3>Quiet by design</h3><p>Keyboard-friendly and accessible. Colour only ever means something.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="get" class="cta-band">
+      <div class="wrap">
+        <h2>Your next hour starts now.</h2>
+        <p class="lede">Download time-log and log the first thing you do.</p>
+        <div class="cta">
+          <a class="btn" data-dl href="https://github.com/ChristophBe/time-log/releases/latest">Download</a>
+          <a class="btn ghost" href="https://github.com/ChristophBe/time-log#running-it">Build from source</a>
+        </div>
+        <div class="platforms" aria-label="Platforms">
+          <span class="chip">macOS</span><span class="chip">Windows</span><span class="chip">Linux</span><span class="chip">Android</span><span class="chip">Web</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>time-log · <a href="https://github.com/ChristophBe/time-log">source on GitHub</a></span>
+      <span>Set in Geist, SIL Open Font License · <a href="fonts/OFL.txt">licence</a></span>
+    </div>
+  </footer>
+
+  <script src="demos.js"></script>
+</body>
+</html>

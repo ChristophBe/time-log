@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- time-log. The mark is the app's own block: a span of the day, with the
+       live edge that identifies it. Ink ground, because the only two colours
+       this app spends are activity colour and "now" (SPEC §9.8).
+
+       The rim is not decoration: on a dark desktop an ink tile has no edge, and
+       the mark would read as a bar floating on the wallpaper. -->
+  <rect width="1024" height="1024" rx="232" fill="#17171A"/>
+  <rect x="4" y="4" width="1016" height="1016" rx="230"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="8"/>
+  <rect x="228" y="166" width="568" height="692" rx="172" fill="#FFFFFF" fill-opacity="0.26"/>
+  <rect x="304" y="252" width="110" height="520" rx="55" fill="#6D4AFF"/>
+</svg>
